@@ -197,7 +197,7 @@ if fdf.empty:
     st.stop()
 
 # ---------------------------------------------------------------------------
-# KPI cards
+# Formatting helpers (used across tabs)
 # ---------------------------------------------------------------------------
 def fmt_int(x):
     return f"{int(x):,}" if pd.notna(x) else "—"
@@ -210,29 +210,6 @@ def fmt_money(x):
 def fmt_pct(x):
     return f"{x:.2f}%" if pd.notna(x) else "—"
 
-
-total_impr = fdf[COL_IMPRESSIONS].sum()
-total_reach = fdf[COL_REACH].sum()
-total_clicks = fdf[COL_CLICKS].sum()
-total_spend = fdf["Spend (est.)"].sum()
-avg_ctr = fdf[COL_CTR].mean()
-avg_cpc = fdf[COL_CPC_ALL].mean()
-avg_cpm = fdf[COL_CPM].mean()
-total_purch = fdf[COL_PURCHASES].sum()
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Impressions", fmt_int(total_impr))
-c2.metric("Reach", fmt_int(total_reach))
-c3.metric("Clicks", fmt_int(total_clicks))
-c4.metric("Spend (est.)", fmt_money(total_spend))
-
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Avg CTR", fmt_pct(avg_ctr))
-c6.metric("Avg CPC", fmt_money(avg_cpc))
-c7.metric("Avg CPM", fmt_money(avg_cpm))
-c8.metric("Purchases", fmt_int(total_purch))
-
-st.divider()
 
 # ---------------------------------------------------------------------------
 # Tabs
