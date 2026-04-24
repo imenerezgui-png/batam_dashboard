@@ -548,6 +548,7 @@ with tab_plat:
             "Payment info": COL_PAY_INFO,
             "Purchases": COL_PURCHASES,
         }
+        platforms = sorted(ppdf[COL_PLATFORM].dropna().unique().tolist())
         funnel_cols = st.columns(len(platforms))
         for col, plat in zip(funnel_cols, platforms):
             sub = ppdf[ppdf[COL_PLATFORM] == plat]
