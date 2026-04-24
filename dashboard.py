@@ -252,9 +252,9 @@ def fmt_pct(x):
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab_plat, tab5 = st.tabs(
-    ["📈 Reach & Impressions", "💰 Cost & Efficiency", "❤️ Engagement",
-     "🎯 Audience & Funnel", "🔀 Platform (FB vs IG)", "🗂️ Raw Data"]
+tab_plat, tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["🌐 Global Overview Meta", "📈 Reach & Impressions", "💰 Cost & Efficiency",
+     "❤️ Engagement", "🎯 Audience & Funnel", "🗂️ Raw Data"]
 )
 
 # ---- Tab 1: Reach & Impressions ----
