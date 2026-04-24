@@ -114,6 +114,25 @@ mask = (
     & df[COL_AGE].isin(sel_ages)
     & df[COL_OBJECTIVE].isin(sel_obj)
 )
+
+# ---------------------------------------------------------------------------
+# Cross-filter state (set by clicking on charts)
+# ---------------------------------------------------------------------------
+st.session_state.setdefault("xf_campaigns", [])
+st.session_state.setdefault("xf_age", [])
+st.session_state.setdefault("xf_objective", [])
+
+xf_camp = st.session_state["xf_campaigns"]
+xf_age = st.session_state["xf_age"]
+xf_obj = st.session_state["xf_objective"]
+
+if xf_camp:
+    mask &= df[COL_CAMPAIGN].isin(xf_camp)
+if xf_age:
+    mask &= df[COL_AGE].isin(xf_age)
+if xf_obj:
+    mask &= df[COL_OBJECTIVE].isin(xf_obj)
+
 fdf = df.loc[mask].copy()
 
 # ---------------------------------------------------------------------------
@@ -124,6 +143,25 @@ st.caption(
     f"{len(fdf):,} rows · {fdf[COL_CAMPAIGN].nunique()} campaigns · "
     f"{fdf[COL_AGE].nunique()} age groups"
 )
+
+# Active cross-filter chips + reset
+active = []
+if xf_camp:
+    active.append(f"Campaign: {', '.join(map(str, xf_camp))}")
+if xf_age:
+    active.append(f"Age: {', '.join(map(str, xf_age))}")
+if xf_obj:
+    active.append(f"Objective: {', '.join(map(str, xf_obj))}")
+if active:
+    chip_col, btn_col = st.columns([5, 1])
+    with chip_col:
+        st.info("🔍 **Active chart filters** — " + " · ".join(active))
+    with btn_col:
+        if st.button("✖ Clear", use_container_width=True):
+            st.session_state["xf_campaigns"] = []
+            st.session_state["xf_age"] = []
+            st.session_state["xf_objective"] = []
+            st.rerun()
 
 if fdf.empty:
     st.warning("No data matches the current filters.")
@@ -177,6 +215,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 
 # ---- Tab 1: Reach & Impressions ----
 with tab1:
+    st.caption("💡 **Tip:** click bars / slices below to filter the whole dashboard.")
+
     by_camp = (
         fdf.groupby(COL_CAMPAIGN, as_index=False)[[COL_IMPRESSIONS, COL_REACH]]
         .sum()
@@ -187,22 +227,43 @@ with tab1:
     fig.add_bar(name="Impressions", x=by_camp[COL_CAMPAIGN], y=by_camp[COL_IMPRESSIONS])
     fig.add_bar(name="Reach", x=by_camp[COL_CAMPAIGN], y=by_camp[COL_REACH])
     fig.update_layout(
-        barmode="group", title="Top 20 Campaigns — Impressions vs Reach",
+        barmode="group", title="Top 20 Campaigns — Impressions vs Reach (click a bar to filter)",
         xaxis_tickangle=-40, height=520, legend_orientation="h",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    sel = st.plotly_chart(
+        fig, use_container_width=True, key="chart_camp",
+        on_select="rerun", selection_mode=("points",),
+    )
+    picks = [p["x"] for p in (sel.selection.get("points") or [])]
+    if picks and set(picks) != set(st.session_state["xf_campaigns"]):
+        st.session_state["xf_campaigns"] = picks
+        st.rerun()
 
     col_a, col_b = st.columns(2)
     with col_a:
         by_obj = fdf.groupby(COL_OBJECTIVE, as_index=False)[COL_IMPRESSIONS].sum()
         fig = px.pie(by_obj, names=COL_OBJECTIVE, values=COL_IMPRESSIONS,
-                     title="Impressions share by objective", hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
+                     title="Impressions share by objective (click a slice)", hole=0.4)
+        sel = st.plotly_chart(
+            fig, use_container_width=True, key="chart_obj",
+            on_select="rerun", selection_mode=("points",),
+        )
+        picks = [p["label"] for p in (sel.selection.get("points") or [])]
+        if picks and set(picks) != set(st.session_state["xf_objective"]):
+            st.session_state["xf_objective"] = picks
+            st.rerun()
     with col_b:
         by_age = fdf.groupby(COL_AGE, as_index=False)[[COL_IMPRESSIONS, COL_REACH]].sum()
         fig = px.bar(by_age, x=COL_AGE, y=[COL_IMPRESSIONS, COL_REACH],
-                     barmode="group", title="Impressions & Reach by age group")
-        st.plotly_chart(fig, use_container_width=True)
+                     barmode="group", title="Impressions & Reach by age group (click a bar)")
+        sel = st.plotly_chart(
+            fig, use_container_width=True, key="chart_age",
+            on_select="rerun", selection_mode=("points",),
+        )
+        picks = [p["x"] for p in (sel.selection.get("points") or [])]
+        if picks and set(picks) != set(st.session_state["xf_age"]):
+            st.session_state["xf_age"] = picks
+            st.rerun()
 
 # ---- Tab 2: Cost & Efficiency ----
 with tab2:
