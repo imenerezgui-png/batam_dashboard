@@ -20,12 +20,16 @@ st.set_page_config(
 )
 
 DATA_FILE = Path(__file__).parent / "mg_batam.xlsx"
+PLATFORM_FILE = Path(__file__).parent / "mg_batam_plateform.csv"
 
 # Column name constants (French headers from the source file)
 COL_START = "Début des rapports"
 COL_END = "Fin des rapports"
 COL_CAMPAIGN = "Nom de la campagne"
 COL_AGE = "Âge"
+COL_PLATFORM = "Plateforme"
+COL_MONTH = "mois"
+COL_YEAR = "annee"
 COL_RESULT = "Résultats"
 COL_OBJECTIVE = "Indicateur de résultats"
 COL_REACH = "Couverture"
@@ -79,6 +83,19 @@ def load_uploaded(file) -> pd.DataFrame:
             df[c] = pd.to_datetime(df[c], errors="coerce")
     df["Spend (est.)"] = (df[COL_CLICKS].fillna(0) * df[COL_CPC_ALL].fillna(0)).round(2)
     return df
+
+
+@st.cache_data(show_spinner="Loading platform data…")
+def load_platform_data(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    for c in (COL_START, COL_END):
+        if c in df.columns:
+            df[c] = pd.to_datetime(df[c], errors="coerce")
+    df["Spend (est.)"] = (df[COL_CLICKS].fillna(0) * df[COL_CPC_ALL].fillna(0)).round(2)
+    return df
+
+
+pdf = load_platform_data(PLATFORM_FILE) if PLATFORM_FILE.exists() else None
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +225,9 @@ st.divider()
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+tab1, tab2, tab3, tab4, tab_plat, tab5 = st.tabs(
     ["📈 Reach & Impressions", "💰 Cost & Efficiency", "❤️ Engagement",
-     "🎯 Audience & Funnel", "🗂️ Raw Data"]
+     "🎯 Audience & Funnel", "🔀 Platform (FB vs IG)", "🗂️ Raw Data"]
 )
 
 # ---- Tab 1: Reach & Impressions ----
@@ -384,6 +401,202 @@ with tab4:
     col_d.metric("Messages started", fmt_int(fdf[COL_MSG].sum()))
     roas = fdf[COL_ROAS].dropna()
     col_e.metric("Avg ROAS", f"{roas.mean():.2f}" if not roas.empty else "—")
+
+# ---- Tab Platform: Facebook vs Instagram comparison ----
+with tab_plat:
+    if pdf is None or pdf.empty:
+        st.warning(
+            "Platform-level dataset not found. Place `mg_batam_plateform.csv` next "
+            "to `dashboard.py`."
+        )
+    else:
+        st.caption(
+            "Comparison of all KPIs and their costs **by platform** "
+            "(Facebook vs Instagram). Sidebar filters do not apply here — "
+            "this view uses the dedicated platform dataset."
+        )
+
+        plat_campaigns = sorted(pdf[COL_CAMPAIGN].dropna().unique().tolist())
+        sel_pcamp = st.multiselect(
+            "Filter campaigns (platform view)", plat_campaigns,
+            default=plat_campaigns, key="plat_camp_filter",
+        )
+        ppdf = pdf[pdf[COL_CAMPAIGN].isin(sel_pcamp)].copy()
+
+        if ppdf.empty:
+            st.info("No campaigns selected.")
+            st.stop()
+
+        # ---- Top KPI cards per platform ----
+        st.subheader("KPIs per platform")
+        agg = ppdf.groupby(COL_PLATFORM, as_index=False).agg(
+            Impressions=(COL_IMPRESSIONS, "sum"),
+            Reach=(COL_REACH, "sum"),
+            Clicks=(COL_CLICKS, "sum"),
+            Spend=("Spend (est.)", "sum"),
+            Purchases=(COL_PURCHASES, "sum"),
+            CTR=(COL_CTR, "mean"),
+            CPC=(COL_CPC_ALL, "mean"),
+            CPM=(COL_CPM, "mean"),
+            Frequency=(COL_FREQ, "mean"),
+        )
+
+        platforms = agg[COL_PLATFORM].tolist()
+        cols = st.columns(len(platforms))
+        for col, plat in zip(cols, platforms):
+            row = agg[agg[COL_PLATFORM] == plat].iloc[0]
+            with col:
+                st.markdown(f"### {plat}")
+                st.metric("Impressions", fmt_int(row["Impressions"]))
+                st.metric("Reach", fmt_int(row["Reach"]))
+                st.metric("Clicks", fmt_int(row["Clicks"]))
+                st.metric("Spend (est.)", fmt_money(row["Spend"]))
+                st.metric("Purchases", fmt_int(row["Purchases"]))
+                st.metric("Avg CTR", fmt_pct(row["CTR"]))
+                st.metric("Avg CPC", fmt_money(row["CPC"]))
+                st.metric("Avg CPM", fmt_money(row["CPM"]))
+
+        st.divider()
+
+        # ---- Volume KPI bar chart ----
+        vol_long = agg.melt(
+            id_vars=COL_PLATFORM,
+            value_vars=["Impressions", "Reach", "Clicks", "Purchases"],
+            var_name="KPI", value_name="value",
+        )
+        fig = px.bar(
+            vol_long, x="KPI", y="value", color=COL_PLATFORM,
+            barmode="group", text_auto=".2s",
+            title="Volume KPIs — Facebook vs Instagram",
+            color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
+        )
+        fig.update_layout(height=420)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ---- Cost / efficiency comparison ----
+        col_a, col_b = st.columns(2)
+        with col_a:
+            cost_long = agg.melt(
+                id_vars=COL_PLATFORM,
+                value_vars=["CTR", "CPC", "CPM", "Frequency"],
+                var_name="Metric", value_name="value",
+            )
+            fig = px.bar(
+                cost_long, x="Metric", y="value", color=COL_PLATFORM,
+                barmode="group", text_auto=".3f",
+                title="Avg cost & efficiency metrics",
+                color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
+            )
+            fig.update_layout(height=420)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            spend_share = agg[[COL_PLATFORM, "Spend"]].copy()
+            fig = px.pie(
+                spend_share, names=COL_PLATFORM, values="Spend", hole=0.4,
+                title="Estimated spend share",
+                color=COL_PLATFORM,
+                color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
+            )
+            fig.update_layout(height=420)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ---- Engagement comparison ----
+        eng_cols = [COL_LIKES, COL_REACTIONS, COL_COMMENTS, COL_SHARES,
+                    COL_POST_ENG]
+        eng = ppdf.groupby(COL_PLATFORM, as_index=False)[eng_cols].sum()
+        eng_long = eng.melt(id_vars=COL_PLATFORM, var_name="Metric",
+                            value_name="value")
+        fig = px.bar(
+            eng_long, x="Metric", y="value", color=COL_PLATFORM,
+            barmode="group", text_auto=".2s",
+            title="Engagement metrics by platform",
+            color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
+        )
+        fig.update_layout(height=420, xaxis_tickangle=-20)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ---- Conversion funnel side-by-side ----
+        funnel_metrics = {
+            "Content views": COL_CONTENT_VIEWS,
+            "Link clicks": COL_LINK_CLICKS,
+            "Add to cart": COL_ADD_CART,
+            "Checkout": COL_CHECKOUT,
+            "Payment info": COL_PAY_INFO,
+            "Purchases": COL_PURCHASES,
+        }
+        funnel_cols = st.columns(len(platforms))
+        for col, plat in zip(funnel_cols, platforms):
+            sub = ppdf[ppdf[COL_PLATFORM] == plat]
+            vals = {label: sub[c].sum() for label, c in funnel_metrics.items()}
+            vals = {k: v for k, v in vals.items() if pd.notna(v) and v > 0}
+            with col:
+                if vals:
+                    color = "#1877F2" if plat == "Facebook" else "#E4405F"
+                    fig = go.Figure(go.Funnel(
+                        y=list(vals.keys()), x=list(vals.values()),
+                        textinfo="value+percent initial",
+                        marker={"color": color},
+                    ))
+                    fig.update_layout(title=f"{plat} funnel", height=380)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info(f"No conversion events for {plat}.")
+
+        # ---- Per-campaign platform comparison ----
+        st.subheader("Per-campaign comparison")
+        kpi_choice = st.selectbox(
+            "Metric to compare per campaign",
+            ["Impressions", "Reach", "Clicks", "Spend (est.)", "Purchases",
+             COL_CTR, COL_CPC_ALL, COL_CPM],
+            index=0,
+        )
+        agg_func = "mean" if kpi_choice in (COL_CTR, COL_CPC_ALL, COL_CPM) else "sum"
+        col_map = {
+            "Impressions": COL_IMPRESSIONS, "Reach": COL_REACH,
+            "Clicks": COL_CLICKS, "Spend (est.)": "Spend (est.)",
+            "Purchases": COL_PURCHASES,
+        }
+        col_to_use = col_map.get(kpi_choice, kpi_choice)
+        per_camp = (
+            ppdf.groupby([COL_CAMPAIGN, COL_PLATFORM], as_index=False)[col_to_use]
+            .agg(agg_func)
+        )
+        fig = px.bar(
+            per_camp, x=COL_CAMPAIGN, y=col_to_use, color=COL_PLATFORM,
+            barmode="group", title=f"{kpi_choice} by campaign & platform",
+            color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
+        )
+        fig.update_layout(xaxis_tickangle=-40, height=560)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ---- Trend by month if available ----
+        if COL_MONTH in ppdf.columns and COL_YEAR in ppdf.columns:
+            month_order = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+                           "Juillet", "Août", "Septembre", "Octobre",
+                           "Novembre", "Décembre"]
+            tdf = ppdf.dropna(subset=[COL_MONTH, COL_YEAR]).copy()
+            if not tdf.empty:
+                tdf["Période"] = (
+                    tdf[COL_MONTH].astype(str) + " " + tdf[COL_YEAR].astype(int).astype(str)
+                )
+                trend = tdf.groupby(["Période", COL_MONTH, COL_YEAR, COL_PLATFORM],
+                                    as_index=False)[
+                    [COL_IMPRESSIONS, COL_CLICKS, "Spend (est.)"]
+                ].sum()
+                trend["_m"] = trend[COL_MONTH].apply(
+                    lambda m: month_order.index(m) if m in month_order else 99
+                )
+                trend = trend.sort_values([COL_YEAR, "_m"])
+                fig = px.line(
+                    trend, x="Période", y="Spend (est.)", color=COL_PLATFORM,
+                    markers=True, title="Spend trend by month & platform",
+                    color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
+                )
+                fig.update_layout(height=420)
+                st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("📋 Platform raw data"):
+            st.dataframe(ppdf, use_container_width=True, height=400)
 
 # ---- Tab 5: Raw Data ----
 with tab5:
