@@ -318,27 +318,28 @@ with tab2:
         .sort_values("Spend (est.)", ascending=False)
         .head(20)
     )
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig = px.bar(cost_df, x=COL_CAMPAIGN, y="Spend (est.)",
-                     title="Estimated spend by campaign (top 20)",
-                     color="Spend (est.)", color_continuous_scale="Blues")
-        fig.update_layout(xaxis_tickangle=-40, height=480)
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        fig = px.scatter(
-            fdf, x=COL_CPC_ALL, y=COL_CTR, size=COL_IMPRESSIONS,
-            color=COL_OBJECTIVE, hover_name=COL_CAMPAIGN,
-            title="CTR vs CPC (bubble = Impressions)",
-        )
-        fig.update_layout(height=480)
-        st.plotly_chart(fig, use_container_width=True)
+
+    CHART_HEIGHT = 500
+
+    fig = px.bar(cost_df, x=COL_CAMPAIGN, y="Spend (est.)",
+                 title="Estimated spend by campaign (top 20)",
+                 color="Spend (est.)", color_continuous_scale="Blues")
+    fig.update_layout(xaxis_tickangle=-40, height=CHART_HEIGHT)
+    st.plotly_chart(fig, use_container_width=True)
 
     fig = px.bar(cost_df.melt(id_vars=COL_CAMPAIGN,
                               value_vars=[COL_CTR, COL_CPC_ALL, COL_CPM]),
                  x=COL_CAMPAIGN, y="value", color="variable", barmode="group",
                  title="CTR / CPC / CPM by campaign (top 20 by spend)")
-    fig.update_layout(xaxis_tickangle=-40, height=500)
+    fig.update_layout(xaxis_tickangle=-40, height=CHART_HEIGHT)
+    st.plotly_chart(fig, use_container_width=True)
+
+    fig = px.scatter(
+        fdf, x=COL_CPC_ALL, y=COL_CTR, size=COL_IMPRESSIONS,
+        color=COL_OBJECTIVE, hover_name=COL_CAMPAIGN,
+        title="CTR vs CPC (bubble = Impressions)",
+    )
+    fig.update_layout(height=CHART_HEIGHT)
     st.plotly_chart(fig, use_container_width=True)
 
 # ---- Tab 3: Engagement ----
