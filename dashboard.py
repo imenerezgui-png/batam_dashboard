@@ -126,6 +126,18 @@ sel_ages = st.sidebar.multiselect("Age group", ages, default=ages)
 objectives = sorted(df[COL_OBJECTIVE].dropna().unique().tolist())
 sel_obj = st.sidebar.multiselect("Objective", objectives, default=objectives)
 
+# Platform-view filters (only used inside the Platform tab)
+if pdf is not None and not pdf.empty:
+    with st.sidebar.expander("🔀 Platform view filters", expanded=False):
+        st.caption("Used only on the **Platform (FB vs IG)** tab.")
+        plat_campaigns_all = sorted(pdf[COL_CAMPAIGN].dropna().unique().tolist())
+        sel_pcamp = st.multiselect(
+            "Campaigns", plat_campaigns_all,
+            default=plat_campaigns_all, key="plat_camp_filter",
+        )
+else:
+    sel_pcamp = []
+
 mask = (
     df[COL_CAMPAIGN].isin(sel_campaigns)
     & df[COL_AGE].isin(sel_ages)
@@ -412,15 +424,10 @@ with tab_plat:
     else:
         st.caption(
             "Comparison of all KPIs and their costs **by platform** "
-            "(Facebook vs Instagram). Sidebar filters do not apply here — "
-            "this view uses the dedicated platform dataset."
+            "(Facebook vs Instagram). Use the **🔀 Platform view filters** "
+            "section in the sidebar to narrow campaigns."
         )
 
-        plat_campaigns = sorted(pdf[COL_CAMPAIGN].dropna().unique().tolist())
-        sel_pcamp = st.multiselect(
-            "Filter campaigns (platform view)", plat_campaigns,
-            default=plat_campaigns, key="plat_camp_filter",
-        )
         ppdf = pdf[pdf[COL_CAMPAIGN].isin(sel_pcamp)].copy()
 
         if ppdf.empty:
