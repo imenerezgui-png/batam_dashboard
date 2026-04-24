@@ -19,6 +19,44 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ---------------------------------------------------------------------------
+# Custom CSS — rounded KPI cards with equal sizing
+# ---------------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* KPI cards: even rectangles with rounded edges */
+    div[data-testid="stMetric"] {
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 18px 20px;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+        min-height: 110px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
+    }
+    div[data-testid="stMetric"] label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #475569;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 DATA_FILE = Path(__file__).parent / "mg_batam.xlsx"
 PLATFORM_FILE = Path(__file__).parent / "mg_batam_plateform.csv"
 
