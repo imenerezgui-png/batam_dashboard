@@ -3,6 +3,7 @@ Batam Meta Ads Dashboard
 Interactive Streamlit dashboard for Facebook/Instagram campaign analytics.
 """
 from pathlib import Path
+import base64
 
 import pandas as pd
 import plotly.express as px
@@ -205,7 +206,55 @@ fdf = df.loc[mask].copy()
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
-st.title("📊 Batam — Meta Ads Performance Dashboard")
+@st.cache_data
+def _img_b64(path_str: str) -> str:
+    return base64.b64encode(Path(path_str).read_bytes()).decode()
+
+
+_logo_path = Path(__file__).parent / "ykone_logo.jpg"
+if _logo_path.exists():
+    st.markdown(
+        f"""
+        <div style="display:flex; align-items:center; gap:22px; margin: 6px 0 14px 0;">
+            <img src="data:image/jpeg;base64,{_img_b64(str(_logo_path))}"
+                 style="height:78px; width:78px; object-fit:cover;
+                        border-radius:18px; background:#000; padding:4px;
+                        box-shadow:
+                            0 0 14px rgba(255,255,255,0.85),
+                            0 0 32px rgba(180,200,255,0.55),
+                            0 0 60px rgba(120,150,255,0.35),
+                            0 8px 22px rgba(0,0,0,0.45);
+                        animation: ykoneGlow 3.2s ease-in-out infinite;" />
+            <div>
+                <h1 style="margin:0; padding:0; font-size:2.1rem;">
+                    Batam — Meta Ads Performance Dashboard
+                </h1>
+            </div>
+        </div>
+        <style>
+        @keyframes ykoneGlow {{
+            0%, 100% {{
+                box-shadow:
+                    0 0 14px rgba(255,255,255,0.85),
+                    0 0 32px rgba(180,200,255,0.55),
+                    0 0 60px rgba(120,150,255,0.35),
+                    0 8px 22px rgba(0,0,0,0.45);
+            }}
+            50% {{
+                box-shadow:
+                    0 0 22px rgba(255,255,255,1),
+                    0 0 48px rgba(200,215,255,0.75),
+                    0 0 80px rgba(150,180,255,0.55),
+                    0 8px 22px rgba(0,0,0,0.45);
+            }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.title("📊 Batam — Meta Ads Performance Dashboard")
+
 st.caption(
     f"{len(fdf):,} rows · {fdf[COL_CAMPAIGN].nunique()} campaigns · "
     f"{fdf[COL_AGE].nunique()} age groups"
