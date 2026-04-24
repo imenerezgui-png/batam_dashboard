@@ -429,6 +429,12 @@ with tab_plat:
 
         # ---- Top KPI cards per platform ----
         st.subheader("KPIs per platform")
+
+        plat_options = ["All"] + sorted(ppdf[COL_PLATFORM].dropna().unique().tolist())
+        plat_view = st.radio(
+            "View", plat_options, horizontal=True, key="plat_kpi_view",
+        )
+
         agg = ppdf.groupby(COL_PLATFORM, as_index=False).agg(
             Impressions=(COL_IMPRESSIONS, "sum"),
             Reach=(COL_REACH, "sum"),
@@ -441,20 +447,38 @@ with tab_plat:
             Frequency=(COL_FREQ, "mean"),
         )
 
-        platforms = agg[COL_PLATFORM].tolist()
-        cols = st.columns(len(platforms))
-        for col, plat in zip(cols, platforms):
-            row = agg[agg[COL_PLATFORM] == plat].iloc[0]
-            with col:
-                st.markdown(f"### {plat}")
-                st.metric("Impressions", fmt_int(row["Impressions"]))
-                st.metric("Reach", fmt_int(row["Reach"]))
-                st.metric("Clicks", fmt_int(row["Clicks"]))
-                st.metric("Spend (est.)", fmt_money(row["Spend"]))
-                st.metric("Purchases", fmt_int(row["Purchases"]))
-                st.metric("Avg CTR", fmt_pct(row["CTR"]))
-                st.metric("Avg CPC", fmt_money(row["CPC"]))
-                st.metric("Avg CPM", fmt_money(row["CPM"]))
+        if plat_view == "All":
+            # Aggregated across both platforms
+            sub = ppdf
+            row = {
+                "Impressions": sub[COL_IMPRESSIONS].sum(),
+                "Reach": sub[COL_REACH].sum(),
+                "Clicks": sub[COL_CLICKS].sum(),
+                "Spend": sub["Spend (est.)"].sum(),
+                "Purchases": sub[COL_PURCHASES].sum(),
+                "CTR": sub[COL_CTR].mean(),
+                "CPC": sub[COL_CPC_ALL].mean(),
+                "CPM": sub[COL_CPM].mean(),
+                "Frequency": sub[COL_FREQ].mean(),
+            }
+            label = "All platforms"
+        else:
+            row = agg[agg[COL_PLATFORM] == plat_view].iloc[0].to_dict()
+            label = plat_view
+
+        st.markdown(f"#### {label}")
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("Impressions", fmt_int(row["Impressions"]))
+        k2.metric("Reach", fmt_int(row["Reach"]))
+        k3.metric("Clicks", fmt_int(row["Clicks"]))
+        k4.metric("Spend (est.)", fmt_money(row["Spend"]))
+        k5.metric("Purchases", fmt_int(row["Purchases"]))
+
+        k6, k7, k8, k9 = st.columns(4)
+        k6.metric("Avg CTR", fmt_pct(row["CTR"]))
+        k7.metric("Avg CPC", fmt_money(row["CPC"]))
+        k8.metric("Avg CPM", fmt_money(row["CPM"]))
+        k9.metric("Avg frequency", f"{row['Frequency']:.2f}" if pd.notna(row["Frequency"]) else "—")
 
         st.divider()
 
