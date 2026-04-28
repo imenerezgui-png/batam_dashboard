@@ -8,7 +8,31 @@ import base64
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
+
+# ---------------------------------------------------------------------------
+# Plotly default dark template matching the dashboard theme
+# ---------------------------------------------------------------------------
+pio.templates["batam"] = go.layout.Template(
+    layout=go.Layout(
+        font=dict(family="Inter, sans-serif", color="#e2e8f0", size=13),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        colorway=["#a855f7", "#6366f1", "#3b82f6", "#22d3ee",
+                  "#f472b6", "#facc15", "#34d399", "#fb7185"],
+        title=dict(font=dict(size=16, color="#f1f5f9", family="Inter")),
+        legend=dict(bgcolor="rgba(20,26,43,0.6)",
+                    bordercolor="rgba(148,163,184,0.15)", borderwidth=1),
+        xaxis=dict(gridcolor="rgba(148,163,184,0.10)", zerolinecolor="rgba(148,163,184,0.15)",
+                   linecolor="rgba(148,163,184,0.20)", tickfont=dict(color="#94a3b8")),
+        yaxis=dict(gridcolor="rgba(148,163,184,0.10)", zerolinecolor="rgba(148,163,184,0.15)",
+                   linecolor="rgba(148,163,184,0.20)", tickfont=dict(color="#94a3b8")),
+        hoverlabel=dict(bgcolor="#141a2b", bordercolor="#a855f7",
+                        font=dict(color="#f1f5f9", family="Inter")),
+    )
+)
+pio.templates.default = "plotly_dark+batam"
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -21,37 +45,153 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Custom CSS — rounded KPI cards with equal sizing
+# Custom CSS — modern dark theme inspired by analytics dashboards
 # ---------------------------------------------------------------------------
 st.markdown(
     """
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <style>
-    /* KPI cards: even rectangles with rounded edges */
+    /* ===== Global ===== */
+    html, body, [class*="css"], .stApp {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    }
+    .stApp {
+        background:
+            radial-gradient(ellipse at top left, rgba(168, 85, 247, 0.10), transparent 50%),
+            radial-gradient(ellipse at bottom right, rgba(59, 130, 246, 0.10), transparent 50%),
+            linear-gradient(180deg, #0b0f1a 0%, #0f1424 100%);
+        color: #e2e8f0;
+    }
+    /* Hide default header */
+    header[data-testid="stHeader"] { background: transparent; }
+
+    /* ===== Sidebar ===== */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0d1220 0%, #141a2b 100%);
+        border-right: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    section[data-testid="stSidebar"] .stMarkdown,
+    section[data-testid="stSidebar"] label { color: #cbd5e1; }
+
+    /* ===== Title h1 ===== */
+    h1 {
+        font-weight: 800 !important;
+        letter-spacing: -0.02em;
+        background: linear-gradient(90deg, #f8fafc 0%, #c4b5fd 60%, #a78bfa 100%);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    h2, h3, h4 { color: #f1f5f9 !important; font-weight: 700 !important; letter-spacing: -0.01em; }
+
+    /* ===== KPI cards ===== */
     div[data-testid="stMetric"] {
-        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: 18px 20px;
-        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
-        min-height: 110px;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 18px;
+        padding: 22px 24px;
+        box-shadow:
+            0 4px 12px rgba(0, 0, 0, 0.25),
+            inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        min-height: 130px;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    div[data-testid="stMetric"]::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, #a855f7, #6366f1, #3b82f6);
+        opacity: 0.85;
     }
     div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
+        transform: translateY(-3px);
+        border-color: rgba(168, 85, 247, 0.45);
+        box-shadow:
+            0 12px 28px rgba(168, 85, 247, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
     div[data-testid="stMetric"] label {
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: #475569;
+        font-size: 0.72rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #94a3b8 !important;
     }
     div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #0f172a;
+        font-size: 1.85rem !important;
+        font-weight: 800 !important;
+        color: #f8fafc !important;
+        margin-top: 4px;
+    }
+
+    /* ===== Tabs ===== */
+    div[data-baseweb="tab-list"] {
+        gap: 6px;
+        background: rgba(20, 26, 43, 0.55);
+        padding: 6px;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.10);
+    }
+    button[data-baseweb="tab"] {
+        background: transparent !important;
+        border-radius: 10px !important;
+        padding: 10px 18px !important;
+        color: #cbd5e1 !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease;
+    }
+    button[data-baseweb="tab"]:hover { color: #f1f5f9 !important; background: rgba(168, 85, 247, 0.08) !important; }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 14px rgba(168, 85, 247, 0.35);
+    }
+    div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] { display: none !important; }
+
+    /* ===== Buttons / radios / multiselect chips ===== */
+    .stButton > button {
+        background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+        color: white; border: none; border-radius: 10px;
+        font-weight: 600; padding: 8px 16px;
+        box-shadow: 0 4px 12px rgba(168, 85, 247, 0.25);
+        transition: transform 0.15s ease;
+    }
+    .stButton > button:hover { transform: translateY(-1px); }
+
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="input"] > div {
+        background: rgba(20, 26, 43, 0.7) !important;
+        border-color: rgba(148, 163, 184, 0.22) !important;
+        border-radius: 10px !important;
+    }
+
+    /* ===== Containers / dividers ===== */
+    hr { border-color: rgba(148, 163, 184, 0.15) !important; }
+    div[data-testid="stExpander"] {
+        background: rgba(20, 26, 43, 0.55);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 14px;
+    }
+
+    /* ===== Plotly chart container ===== */
+    div[data-testid="stPlotlyChart"] {
+        background: rgba(20, 26, 43, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.10);
+        border-radius: 16px;
+        padding: 12px;
+    }
+
+    /* ===== Info / warning blocks ===== */
+    div[data-testid="stAlert"] {
+        border-radius: 12px;
+        border: 1px solid rgba(168, 85, 247, 0.25);
+        background: rgba(168, 85, 247, 0.08) !important;
     }
     </style>
     """,
