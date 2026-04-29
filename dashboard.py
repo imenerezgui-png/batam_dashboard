@@ -32,7 +32,7 @@ pio.templates["batam"] = go.layout.Template(
                         font=dict(color="#f1f5f9", family="Inter")),
     )
 )
-pio.templates.default = "plotly_dark+batam"
+pio.templates.default = "batam"
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -181,10 +181,16 @@ st.markdown(
 
     /* ===== Plotly chart container ===== */
     div[data-testid="stPlotlyChart"] {
-        background: rgba(20, 26, 43, 0.5);
-        border: 1px solid rgba(148, 163, 184, 0.10);
+        background: transparent !important;
+        border: none;
         border-radius: 16px;
-        padding: 12px;
+        padding: 4px 0;
+    }
+    div[data-testid="stPlotlyChart"] .js-plotly-plot,
+    div[data-testid="stPlotlyChart"] .plot-container,
+    div[data-testid="stPlotlyChart"] .svg-container,
+    div[data-testid="stPlotlyChart"] .main-svg {
+        background: transparent !important;
     }
 
     /* ===== Info / warning blocks ===== */
