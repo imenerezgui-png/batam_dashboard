@@ -414,7 +414,7 @@ if _logo_path.exists():
                         animation: ykoneGlow 3.2s ease-in-out infinite;" />
             <div>
                 <h1 style="margin:0; padding:0; font-size:2.1rem;">
-                    Batam — Meta Ads Performance Dashboard
+                    Meta Ads Performance Dashboard
                 </h1>
             </div>
         </div>
@@ -440,7 +440,7 @@ if _logo_path.exists():
         unsafe_allow_html=True,
     )
 else:
-    st.title("📊 Batam — Meta Ads Performance Dashboard")
+    st.title("📊 Meta Ads Performance Dashboard")
 
 st.caption(
     f"{len(fdf):,} rows · {fdf[COL_CAMPAIGN].nunique()} campaigns · "
