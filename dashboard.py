@@ -41,7 +41,7 @@ pio.templates.default = "batam"
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Batam Meta Ads Dashboard",
+    page_title="Meta Ads Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -520,25 +520,6 @@ tab_plat, tab1, tab2, tab3, tab4, tab5 = st.tabs(
 
 # ---- Tab 1: Reach & Impressions ----
 with tab1:
-    # Summary takeaways
-    top_camp, top_imp = safe_top(fdf, COL_CAMPAIGN, COL_IMPRESSIONS)
-    top_age, top_age_imp = safe_top(fdf, COL_AGE, COL_IMPRESSIONS)
-    top_obj, _ = safe_top(fdf, COL_OBJECTIVE, COL_IMPRESSIONS)
-    total_imp = fdf[COL_IMPRESSIONS].sum()
-    total_reach = fdf[COL_REACH].sum()
-    avg_freq = (total_imp / total_reach) if total_reach else None
-    render_summary(
-        "Reach & Impressions — key takeaways",
-        [
-            f"Total <b>{fmt_int(total_imp)}</b> impressions delivered to <b>{fmt_int(total_reach)}</b> unique users.",
-            f"Top campaign: <b>{top_camp}</b> with <b>{fmt_int(top_imp)}</b> impressions." if top_camp else "",
-            f"Best-performing age group: <b>{top_age}</b> ({fmt_int(top_age_imp)} impressions)." if top_age else "",
-            f"Leading objective: <b>{top_obj}</b>." if top_obj else "",
-            f"Average frequency ≈ <b>{avg_freq:.2f}</b> impressions per user." if avg_freq else "",
-        ],
-        icon="📈",
-    )
-
     st.caption("💡 **Tip:** click bars / slices below to filter the whole dashboard.")
 
     by_camp = (
@@ -589,6 +570,25 @@ with tab1:
             st.session_state["xf_age"] = picks
             st.rerun()
 
+    # Summary takeaways
+    top_camp, top_imp = safe_top(fdf, COL_CAMPAIGN, COL_IMPRESSIONS)
+    top_age, top_age_imp = safe_top(fdf, COL_AGE, COL_IMPRESSIONS)
+    top_obj, _ = safe_top(fdf, COL_OBJECTIVE, COL_IMPRESSIONS)
+    total_imp = fdf[COL_IMPRESSIONS].sum()
+    total_reach = fdf[COL_REACH].sum()
+    avg_freq = (total_imp / total_reach) if total_reach else None
+    render_summary(
+        "Reach & Impressions — key takeaways",
+        [
+            f"Total <b>{fmt_int(total_imp)}</b> impressions delivered to <b>{fmt_int(total_reach)}</b> unique users.",
+            f"Top campaign: <b>{top_camp}</b> with <b>{fmt_int(top_imp)}</b> impressions." if top_camp else "",
+            f"Best-performing age group: <b>{top_age}</b> ({fmt_int(top_age_imp)} impressions)." if top_age else "",
+            f"Leading objective: <b>{top_obj}</b>." if top_obj else "",
+            f"Average frequency ≈ <b>{avg_freq:.2f}</b> impressions per user." if avg_freq else "",
+        ],
+        icon="📈",
+    )
+
 # ---- Tab 2: Cost & Efficiency ----
 with tab2:
     cost_df = (
@@ -597,31 +597,6 @@ with tab2:
               "Spend (est.)": "sum"})
         .sort_values("Spend (est.)", ascending=False)
         .head(20)
-    )
-
-    # Summary takeaways
-    total_spend = fdf["Spend (est.)"].sum()
-    avg_ctr = fdf[COL_CTR].mean()
-    avg_cpc = fdf[COL_CPC_ALL].mean()
-    avg_cpm = fdf[COL_CPM].mean()
-    top_spender, top_spend_val = safe_top(fdf, COL_CAMPAIGN, "Spend (est.)")
-    # Most efficient: highest CTR among campaigns with non-trivial impressions
-    eff = fdf.groupby(COL_CAMPAIGN, as_index=False).agg(
-        ctr=(COL_CTR, "mean"), cpc=(COL_CPC_ALL, "mean"), imp=(COL_IMPRESSIONS, "sum")
-    )
-    eff = eff[eff["imp"] >= eff["imp"].median()]
-    best_ctr_camp = eff.sort_values("ctr", ascending=False).iloc[0] if not eff.empty else None
-    cheapest_camp = eff[eff["cpc"] > 0].sort_values("cpc").iloc[0] if not eff[eff["cpc"] > 0].empty else None
-    render_summary(
-        "Cost & Efficiency — key takeaways",
-        [
-            f"Total estimated spend: <b>{fmt_money(total_spend)}</b>.",
-            f"Avg CTR <b>{fmt_pct(avg_ctr)}</b> · avg CPC <b>{fmt_money(avg_cpc)}</b> · avg CPM <b>{fmt_money(avg_cpm)}</b>.",
-            f"Biggest spender: <b>{top_spender}</b> ({fmt_money(top_spend_val)})." if top_spender else "",
-            f"Highest CTR (above-median reach): <b>{best_ctr_camp[COL_CAMPAIGN]}</b> at <b>{fmt_pct(best_ctr_camp['ctr'])}</b>." if best_ctr_camp is not None else "",
-            f"Lowest CPC (above-median reach): <b>{cheapest_camp[COL_CAMPAIGN]}</b> at <b>{fmt_money(cheapest_camp['cpc'])}</b>." if cheapest_camp is not None else "",
-        ],
-        icon="💰",
     )
 
     CHART_HEIGHT = 500
@@ -647,33 +622,33 @@ with tab2:
     fig.update_layout(height=CHART_HEIGHT)
     st.plotly_chart(fig, use_container_width=True)
 
+    # Summary takeaways
+    total_spend = fdf["Spend (est.)"].sum()
+    avg_ctr = fdf[COL_CTR].mean()
+    avg_cpc = fdf[COL_CPC_ALL].mean()
+    avg_cpm = fdf[COL_CPM].mean()
+    top_spender, top_spend_val = safe_top(fdf, COL_CAMPAIGN, "Spend (est.)")
+    eff = fdf.groupby(COL_CAMPAIGN, as_index=False).agg(
+        ctr=(COL_CTR, "mean"), cpc=(COL_CPC_ALL, "mean"), imp=(COL_IMPRESSIONS, "sum")
+    )
+    eff = eff[eff["imp"] >= eff["imp"].median()]
+    best_ctr_camp = eff.sort_values("ctr", ascending=False).iloc[0] if not eff.empty else None
+    cheapest_camp = eff[eff["cpc"] > 0].sort_values("cpc").iloc[0] if not eff[eff["cpc"] > 0].empty else None
+    render_summary(
+        "Cost & Efficiency — key takeaways",
+        [
+            f"Total estimated spend: <b>{fmt_money(total_spend)}</b>.",
+            f"Avg CTR <b>{fmt_pct(avg_ctr)}</b> · avg CPC <b>{fmt_money(avg_cpc)}</b> · avg CPM <b>{fmt_money(avg_cpm)}</b>.",
+            f"Biggest spender: <b>{top_spender}</b> ({fmt_money(top_spend_val)})." if top_spender else "",
+            f"Highest CTR (above-median reach): <b>{best_ctr_camp[COL_CAMPAIGN]}</b> at <b>{fmt_pct(best_ctr_camp['ctr'])}</b>." if best_ctr_camp is not None else "",
+            f"Lowest CPC (above-median reach): <b>{cheapest_camp[COL_CAMPAIGN]}</b> at <b>{fmt_money(cheapest_camp['cpc'])}</b>." if cheapest_camp is not None else "",
+        ],
+        icon="💰",
+    )
+
 # ---- Tab 3: Engagement ----
 with tab3:
     eng_cols = [COL_LIKES, COL_REACTIONS, COL_COMMENTS, COL_SHARES]
-
-    # Summary takeaways
-    totals = {c: fdf[c].sum() for c in eng_cols if c in fdf.columns}
-    total_eng = sum(totals.values())
-    eng_per_camp = (
-        fdf.groupby(COL_CAMPAIGN, as_index=False)[eng_cols].sum()
-        .assign(_t=lambda d: d[eng_cols].sum(axis=1))
-        .sort_values("_t", ascending=False)
-    )
-    top_eng_camp = eng_per_camp.iloc[0] if not eng_per_camp.empty else None
-    dominant_metric = max(totals, key=totals.get) if totals else None
-    video_views = fdf[COL_3SEC_VIEWS].sum() if COL_3SEC_VIEWS in fdf.columns else 0
-    thru = fdf[COL_THRUPLAYS].sum() if COL_THRUPLAYS in fdf.columns else 0
-    completion = (thru / video_views * 100) if video_views else None
-    render_summary(
-        "Engagement — key takeaways",
-        [
-            f"Total engagement actions: <b>{fmt_int(total_eng)}</b>.",
-            f"Most engaging campaign: <b>{top_eng_camp[COL_CAMPAIGN]}</b> with <b>{fmt_int(top_eng_camp['_t'])}</b> total interactions." if top_eng_camp is not None else "",
-            f"Dominant interaction type: <b>{dominant_metric}</b> ({fmt_int(totals[dominant_metric])})." if dominant_metric else "",
-            f"Video: <b>{fmt_int(video_views)}</b> 3-sec views · <b>{fmt_int(thru)}</b> ThruPlays" + (f" → completion ≈ <b>{completion:.1f}%</b>." if completion else "."),
-        ],
-        icon="❤️",
-    )
 
     eng = (
         fdf.groupby(COL_CAMPAIGN, as_index=False)[eng_cols]
@@ -714,31 +689,32 @@ with tab3:
         fig.update_layout(xaxis_tickangle=-40, height=520)
         st.plotly_chart(fig, use_container_width=True)
 
-# ---- Tab 4: Audience & Funnel ----
-with tab4:
     # Summary takeaways
-    age_perf_sum = fdf.groupby(COL_AGE, as_index=False).agg(
-        Clicks=(COL_CLICKS, "sum"), CTR=(COL_CTR, "mean"),
-    ).dropna()
-    best_clicks_age = age_perf_sum.sort_values("Clicks", ascending=False).iloc[0] if not age_perf_sum.empty else None
-    best_ctr_age = age_perf_sum.sort_values("CTR", ascending=False).iloc[0] if not age_perf_sum.empty else None
-    purchases = fdf[COL_PURCHASES].sum() if COL_PURCHASES in fdf.columns else 0
-    link_clicks = fdf[COL_LINK_CLICKS].sum() if COL_LINK_CLICKS in fdf.columns else 0
-    conv_rate = (purchases / link_clicks * 100) if link_clicks else None
-    leads_total = fdf[COL_LEADS].sum() if COL_LEADS in fdf.columns else 0
-    roas_avg = fdf[COL_ROAS].dropna().mean() if COL_ROAS in fdf.columns else None
+    totals = {c: fdf[c].sum() for c in eng_cols if c in fdf.columns}
+    total_eng = sum(totals.values())
+    eng_per_camp = (
+        fdf.groupby(COL_CAMPAIGN, as_index=False)[eng_cols].sum()
+        .assign(_t=lambda d: d[eng_cols].sum(axis=1))
+        .sort_values("_t", ascending=False)
+    )
+    top_eng_camp = eng_per_camp.iloc[0] if not eng_per_camp.empty else None
+    dominant_metric = max(totals, key=totals.get) if totals else None
+    video_views = fdf[COL_3SEC_VIEWS].sum() if COL_3SEC_VIEWS in fdf.columns else 0
+    thru = fdf[COL_THRUPLAYS].sum() if COL_THRUPLAYS in fdf.columns else 0
+    completion = (thru / video_views * 100) if video_views else None
     render_summary(
-        "Audience & Funnel — key takeaways",
+        "Engagement — key takeaways",
         [
-            f"Most clicks come from age group <b>{best_clicks_age[COL_AGE]}</b> (<b>{fmt_int(best_clicks_age['Clicks'])}</b> clicks)." if best_clicks_age is not None else "",
-            f"Highest avg CTR age group: <b>{best_ctr_age[COL_AGE]}</b> at <b>{fmt_pct(best_ctr_age['CTR'])}</b>." if best_ctr_age is not None else "",
-            f"Funnel: <b>{fmt_int(link_clicks)}</b> link clicks → <b>{fmt_int(purchases)}</b> purchases" + (f" (conv. <b>{conv_rate:.2f}%</b>)." if conv_rate else "."),
-            f"Total leads collected: <b>{fmt_int(leads_total)}</b>." if leads_total else "",
-            f"Avg ROAS: <b>{roas_avg:.2f}</b>." if roas_avg and pd.notna(roas_avg) else "",
+            f"Total engagement actions: <b>{fmt_int(total_eng)}</b>.",
+            f"Most engaging campaign: <b>{top_eng_camp[COL_CAMPAIGN]}</b> with <b>{fmt_int(top_eng_camp['_t'])}</b> total interactions." if top_eng_camp is not None else "",
+            f"Dominant interaction type: <b>{dominant_metric}</b> ({fmt_int(totals[dominant_metric])})." if dominant_metric else "",
+            f"Video: <b>{fmt_int(video_views)}</b> 3-sec views · <b>{fmt_int(thru)}</b> ThruPlays" + (f" → completion ≈ <b>{completion:.1f}%</b>." if completion else "."),
         ],
-        icon="🎯",
+        icon="❤️",
     )
 
+# ---- Tab 4: Audience & Funnel ----
+with tab4:
     col_a, col_b = st.columns(2)
     with col_a:
         age_perf = fdf.groupby(COL_AGE, as_index=False).agg(
@@ -779,6 +755,29 @@ with tab4:
     roas = fdf[COL_ROAS].dropna()
     col_e.metric("Avg ROAS", f"{roas.mean():.2f}" if not roas.empty else "—")
 
+    # Summary takeaways
+    age_perf_sum = fdf.groupby(COL_AGE, as_index=False).agg(
+        Clicks=(COL_CLICKS, "sum"), CTR=(COL_CTR, "mean"),
+    ).dropna()
+    best_clicks_age = age_perf_sum.sort_values("Clicks", ascending=False).iloc[0] if not age_perf_sum.empty else None
+    best_ctr_age = age_perf_sum.sort_values("CTR", ascending=False).iloc[0] if not age_perf_sum.empty else None
+    purchases = fdf[COL_PURCHASES].sum() if COL_PURCHASES in fdf.columns else 0
+    link_clicks = fdf[COL_LINK_CLICKS].sum() if COL_LINK_CLICKS in fdf.columns else 0
+    conv_rate = (purchases / link_clicks * 100) if link_clicks else None
+    leads_total = fdf[COL_LEADS].sum() if COL_LEADS in fdf.columns else 0
+    roas_avg = fdf[COL_ROAS].dropna().mean() if COL_ROAS in fdf.columns else None
+    render_summary(
+        "Audience & Funnel — key takeaways",
+        [
+            f"Most clicks come from age group <b>{best_clicks_age[COL_AGE]}</b> (<b>{fmt_int(best_clicks_age['Clicks'])}</b> clicks)." if best_clicks_age is not None else "",
+            f"Highest avg CTR age group: <b>{best_ctr_age[COL_AGE]}</b> at <b>{fmt_pct(best_ctr_age['CTR'])}</b>." if best_ctr_age is not None else "",
+            f"Funnel: <b>{fmt_int(link_clicks)}</b> link clicks → <b>{fmt_int(purchases)}</b> purchases" + (f" (conv. <b>{conv_rate:.2f}%</b>)." if conv_rate else "."),
+            f"Total leads collected: <b>{fmt_int(leads_total)}</b>." if leads_total else "",
+            f"Avg ROAS: <b>{roas_avg:.2f}</b>." if roas_avg and pd.notna(roas_avg) else "",
+        ],
+        icon="🎯",
+    )
+
 # ---- Tab Platform: Facebook vs Instagram comparison ----
 with tab_plat:
     if pdf is None or pdf.empty:
@@ -798,31 +797,6 @@ with tab_plat:
         if ppdf.empty:
             st.info("No campaigns selected.")
             st.stop()
-
-        # ---- Summary takeaways ----
-        plat_agg = ppdf.groupby(COL_PLATFORM, as_index=False).agg(
-            Imp=(COL_IMPRESSIONS, "sum"), Spend=("Spend (est.)", "sum"),
-            Clicks=(COL_CLICKS, "sum"), CTR=(COL_CTR, "mean"),
-            CPC=(COL_CPC_ALL, "mean"), Purchases=(COL_PURCHASES, "sum"),
-        )
-        total_spend_p = ppdf["Spend (est.)"].sum()
-        leader_imp = plat_agg.sort_values("Imp", ascending=False).iloc[0] if not plat_agg.empty else None
-        leader_ctr = plat_agg.sort_values("CTR", ascending=False).iloc[0] if not plat_agg.empty else None
-        cheapest_plat = plat_agg[plat_agg["CPC"] > 0].sort_values("CPC").iloc[0] if not plat_agg[plat_agg["CPC"] > 0].empty else None
-        spend_breakdown = " · ".join(
-            f"<b>{r[COL_PLATFORM]}</b> {fmt_money(r['Spend'])} ({r['Spend']/total_spend_p*100:.0f}%)"
-            for _, r in plat_agg.iterrows()
-        ) if total_spend_p else ""
-        render_summary(
-            "Facebook vs Instagram — key takeaways",
-            [
-                f"Spend split: {spend_breakdown}." if spend_breakdown else "",
-                f"Reach leader: <b>{leader_imp[COL_PLATFORM]}</b> with <b>{fmt_int(leader_imp['Imp'])}</b> impressions." if leader_imp is not None else "",
-                f"Best avg CTR: <b>{leader_ctr[COL_PLATFORM]}</b> at <b>{fmt_pct(leader_ctr['CTR'])}</b>." if leader_ctr is not None else "",
-                f"Lowest avg CPC: <b>{cheapest_plat[COL_PLATFORM]}</b> at <b>{fmt_money(cheapest_plat['CPC'])}</b>." if cheapest_plat is not None else "",
-            ],
-            icon="🌐",
-        )
 
         # ---- Top KPI cards per platform ----
         st.subheader("KPIs per platform")
@@ -1019,6 +993,31 @@ with tab_plat:
 
         with st.expander("📋 Platform raw data"):
             st.dataframe(ppdf, use_container_width=True, height=400)
+
+        # ---- Summary takeaways ----
+        plat_agg = ppdf.groupby(COL_PLATFORM, as_index=False).agg(
+            Imp=(COL_IMPRESSIONS, "sum"), Spend=("Spend (est.)", "sum"),
+            Clicks=(COL_CLICKS, "sum"), CTR=(COL_CTR, "mean"),
+            CPC=(COL_CPC_ALL, "mean"), Purchases=(COL_PURCHASES, "sum"),
+        )
+        total_spend_p = ppdf["Spend (est.)"].sum()
+        leader_imp = plat_agg.sort_values("Imp", ascending=False).iloc[0] if not plat_agg.empty else None
+        leader_ctr = plat_agg.sort_values("CTR", ascending=False).iloc[0] if not plat_agg.empty else None
+        cheapest_plat = plat_agg[plat_agg["CPC"] > 0].sort_values("CPC").iloc[0] if not plat_agg[plat_agg["CPC"] > 0].empty else None
+        spend_breakdown = " · ".join(
+            f"<b>{r[COL_PLATFORM]}</b> {fmt_money(r['Spend'])} ({r['Spend']/total_spend_p*100:.0f}%)"
+            for _, r in plat_agg.iterrows()
+        ) if total_spend_p else ""
+        render_summary(
+            "Facebook vs Instagram — key takeaways",
+            [
+                f"Spend split: {spend_breakdown}." if spend_breakdown else "",
+                f"Reach leader: <b>{leader_imp[COL_PLATFORM]}</b> with <b>{fmt_int(leader_imp['Imp'])}</b> impressions." if leader_imp is not None else "",
+                f"Best avg CTR: <b>{leader_ctr[COL_PLATFORM]}</b> at <b>{fmt_pct(leader_ctr['CTR'])}</b>." if leader_ctr is not None else "",
+                f"Lowest avg CPC: <b>{cheapest_plat[COL_PLATFORM]}</b> at <b>{fmt_money(cheapest_plat['CPC'])}</b>." if cheapest_plat is not None else "",
+            ],
+            icon="🌐",
+        )
 
 # ---- Tab 5: Raw Data ----
 with tab5:
