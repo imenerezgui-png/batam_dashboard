@@ -567,32 +567,28 @@ with tab3:
     fig.update_layout(xaxis_tickangle=-40, height=520)
     st.plotly_chart(fig, use_container_width=True)
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        video = fdf[[COL_CAMPAIGN, COL_3SEC_VIEWS, COL_THRUPLAYS]].dropna(
-            subset=[COL_3SEC_VIEWS, COL_THRUPLAYS], how="all"
-        )
-        if not video.empty:
-            video = video.groupby(COL_CAMPAIGN, as_index=False).sum().sort_values(
-                COL_3SEC_VIEWS, ascending=False
-            ).head(15)
-            fig = px.bar(video, x=COL_CAMPAIGN, y=[COL_3SEC_VIEWS, COL_THRUPLAYS],
-                         barmode="group", title="Video performance")
-            fig.update_layout(xaxis_tickangle=-40, height=420)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No video metrics in current selection.")
-    with col_b:
-        ig = fdf.groupby(COL_CAMPAIGN, as_index=False)[COL_IG_FOLLOWERS].sum()
-        ig = ig[ig[COL_IG_FOLLOWERS] > 0].sort_values(COL_IG_FOLLOWERS, ascending=False).head(15)
-        if not ig.empty:
-            fig = px.bar(ig, x=COL_CAMPAIGN, y=COL_IG_FOLLOWERS,
-                         title="Instagram followers gained", color=COL_IG_FOLLOWERS,
-                         color_continuous_scale="Magenta")
-            fig.update_layout(xaxis_tickangle=-40, height=420)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No Instagram followers data in current selection.")
+    video = fdf[[COL_CAMPAIGN, COL_3SEC_VIEWS, COL_THRUPLAYS]].dropna(
+        subset=[COL_3SEC_VIEWS, COL_THRUPLAYS], how="all"
+    )
+    if not video.empty:
+        video = video.groupby(COL_CAMPAIGN, as_index=False).sum().sort_values(
+            COL_3SEC_VIEWS, ascending=False
+        ).head(15)
+        fig = px.bar(video, x=COL_CAMPAIGN, y=[COL_3SEC_VIEWS, COL_THRUPLAYS],
+                     barmode="group", title="Video performance")
+        fig.update_layout(xaxis_tickangle=-40, height=520)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No video metrics in current selection.")
+
+    ig = fdf.groupby(COL_CAMPAIGN, as_index=False)[COL_IG_FOLLOWERS].sum()
+    ig = ig[ig[COL_IG_FOLLOWERS] > 0].sort_values(COL_IG_FOLLOWERS, ascending=False).head(15)
+    if not ig.empty:
+        fig = px.bar(ig, x=COL_CAMPAIGN, y=COL_IG_FOLLOWERS,
+                     title="Instagram followers gained", color=COL_IG_FOLLOWERS,
+                     color_continuous_scale="Magenta")
+        fig.update_layout(xaxis_tickangle=-40, height=520)
+        st.plotly_chart(fig, use_container_width=True)
 
 # ---- Tab 4: Audience & Funnel ----
 with tab4:
