@@ -30,7 +30,10 @@ pio.templates["batam"] = go.layout.Template(
                    linecolor="rgba(148,163,184,0.20)", tickfont=dict(color="#94a3b8")),
         hoverlabel=dict(bgcolor="#141a2b", bordercolor="#a855f7",
                         font=dict(color="#f1f5f9", family="Inter")),
-    )
+    ),
+    data=dict(
+        bar=[go.Bar(marker=dict(cornerradius=8, line=dict(width=0)))],
+    ),
 )
 pio.templates.default = "batam"
 
@@ -184,7 +187,15 @@ st.markdown(
         background: transparent !important;
         border: none;
         border-radius: 16px;
-        padding: 4px 0;
+        padding: 8px;
+        filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45))
+                drop-shadow(0 4px 10px rgba(168, 85, 247, 0.15));
+        transition: filter 0.25s ease, transform 0.25s ease;
+    }
+    div[data-testid="stPlotlyChart"]:hover {
+        filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.55))
+                drop-shadow(0 6px 14px rgba(168, 85, 247, 0.25));
+        transform: translateY(-2px);
     }
     div[data-testid="stPlotlyChart"] .js-plotly-plot,
     div[data-testid="stPlotlyChart"] .plot-container,
