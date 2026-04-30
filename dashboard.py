@@ -345,24 +345,49 @@ else:
 
 st.sidebar.markdown("### Filters")
 
+SELECT_ALL = "✅ Select all"
+
+
+def multiselect_with_all(label: str, options: list, key: str) -> list:
+    """Multiselect dropdown with a '(Select all)' sentinel at the top.
+
+    Picking the sentinel replaces the selection with every option.
+    Defaults to all options selected.
+    """
+    default = st.session_state.get(key, options)
+    picked = st.sidebar.multiselect(
+        label, [SELECT_ALL] + options, default=default, key=key,
+    )
+    if SELECT_ALL in picked:
+        # Reset to full selection and rerun so the chip shows all values
+        st.session_state[key] = options
+        st.rerun()
+    return picked
+
+
 campaigns = sorted(df[COL_CAMPAIGN].dropna().unique().tolist())
-sel_campaigns = st.sidebar.multiselect("Campaign", campaigns, default=campaigns)
+sel_campaigns = multiselect_with_all("Campaign", campaigns, key="flt_campaign")
 
 ages = sorted(df[COL_AGE].dropna().unique().tolist())
-sel_ages = st.sidebar.multiselect("Age group", ages, default=ages)
+sel_ages = multiselect_with_all("Age group", ages, key="flt_age")
 
 objectives = sorted(df[COL_OBJECTIVE].dropna().unique().tolist())
-sel_obj = st.sidebar.multiselect("Objective", objectives, default=objectives)
+sel_obj = multiselect_with_all("Objective", objectives, key="flt_objective")
 
 # Platform-view filters (only used inside the Platform tab)
 if pdf is not None and not pdf.empty:
     with st.sidebar.expander("🔀 Platform view filters", expanded=False):
         st.caption("Used only on the **Platform (FB vs IG)** tab.")
         plat_campaigns_all = sorted(pdf[COL_CAMPAIGN].dropna().unique().tolist())
+        _pkey = "plat_camp_filter"
+        _default = st.session_state.get(_pkey, plat_campaigns_all)
         sel_pcamp = st.multiselect(
-            "Campaigns", plat_campaigns_all,
-            default=plat_campaigns_all, key="plat_camp_filter",
+            "Campaigns", [SELECT_ALL] + plat_campaigns_all,
+            default=_default, key=_pkey,
         )
+        if SELECT_ALL in sel_pcamp:
+            st.session_state[_pkey] = plat_campaigns_all
+            st.rerun()
 else:
     sel_pcamp = []
 
