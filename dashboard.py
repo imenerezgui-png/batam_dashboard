@@ -345,49 +345,72 @@ else:
 
 st.sidebar.markdown("### Filters")
 
-SELECT_ALL = "✅ Select all"
+
+def _toggle_all(key: str, options: list) -> None:
+    """Callback: mirror the 'Select all' checkbox onto every option."""
+    val = st.session_state[f"{key}__all"]
+    for opt in options:
+        st.session_state[f"{key}__opt__{opt}"] = val
 
 
-def multiselect_with_all(label: str, options: list, key: str) -> list:
-    """Multiselect dropdown with a '(Select all)' sentinel at the top.
-
-    Picking the sentinel replaces the selection with every option.
-    Defaults to all options selected.
-    """
-    default = st.session_state.get(key, options)
-    picked = st.sidebar.multiselect(
-        label, [SELECT_ALL] + options, default=default, key=key,
+def _toggle_one(key: str, options: list) -> None:
+    """Callback: keep the 'Select all' checkbox in sync with the children."""
+    st.session_state[f"{key}__all"] = all(
+        st.session_state.get(f"{key}__opt__{opt}", False) for opt in options
     )
-    if SELECT_ALL in picked:
-        # Reset to full selection and rerun so the chip shows all values
-        st.session_state[key] = options
-        st.rerun()
-    return picked
+
+
+def dropdown_filter(label: str, options: list, key: str, container=None) -> list:
+    """Collapsed dropdown (popover) with a 'Select all' checkbox + one
+    checkbox per option. Returns the list of currently-checked options.
+    """
+    container = container if container is not None else st.sidebar
+    # Initialise per-option state on first run (all selected by default)
+    for opt in options:
+        ck = f"{key}__opt__{opt}"
+        if ck not in st.session_state:
+            st.session_state[ck] = True
+    if f"{key}__all" not in st.session_state:
+        st.session_state[f"{key}__all"] = True
+
+    n = len(options)
+    count = sum(1 for opt in options if st.session_state[f"{key}__opt__{opt}"])
+    btn_label = f"{label}  —  {count}/{n} selected"
+    with container.popover(btn_label, use_container_width=True):
+        st.checkbox(
+            "✅ Select all",
+            key=f"{key}__all",
+            on_change=_toggle_all,
+            args=(key, options),
+        )
+        st.divider()
+        for opt in options:
+            st.checkbox(
+                str(opt),
+                key=f"{key}__opt__{opt}",
+                on_change=_toggle_one,
+                args=(key, options),
+            )
+    return [opt for opt in options if st.session_state[f"{key}__opt__{opt}"]]
 
 
 campaigns = sorted(df[COL_CAMPAIGN].dropna().unique().tolist())
-sel_campaigns = multiselect_with_all("Campaign", campaigns, key="flt_campaign")
+sel_campaigns = dropdown_filter("Campaign", campaigns, key="flt_campaign")
 
 ages = sorted(df[COL_AGE].dropna().unique().tolist())
-sel_ages = multiselect_with_all("Age group", ages, key="flt_age")
+sel_ages = dropdown_filter("Age group", ages, key="flt_age")
 
 objectives = sorted(df[COL_OBJECTIVE].dropna().unique().tolist())
-sel_obj = multiselect_with_all("Objective", objectives, key="flt_objective")
+sel_obj = dropdown_filter("Objective", objectives, key="flt_objective")
 
 # Platform-view filters (only used inside the Platform tab)
 if pdf is not None and not pdf.empty:
     with st.sidebar.expander("🔀 Platform view filters", expanded=False):
         st.caption("Used only on the **Platform (FB vs IG)** tab.")
         plat_campaigns_all = sorted(pdf[COL_CAMPAIGN].dropna().unique().tolist())
-        _pkey = "plat_camp_filter"
-        _default = st.session_state.get(_pkey, plat_campaigns_all)
-        sel_pcamp = st.multiselect(
-            "Campaigns", [SELECT_ALL] + plat_campaigns_all,
-            default=_default, key=_pkey,
+        sel_pcamp = dropdown_filter(
+            "Campaigns", plat_campaigns_all, key="plat_camp_filter", container=st,
         )
-        if SELECT_ALL in sel_pcamp:
-            st.session_state[_pkey] = plat_campaigns_all
-            st.rerun()
 else:
     sel_pcamp = []
 
