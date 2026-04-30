@@ -376,7 +376,7 @@ def dropdown_filter(label: str, options: list, key: str, container=None) -> list
     n = len(options)
     count = sum(1 for opt in options if st.session_state[f"{key}__opt__{opt}"])
     btn_label = f"{label}  —  {count}/{n} selected"
-    with container.popover(btn_label, use_container_width=True):
+    with container.expander(btn_label, expanded=False):
         st.checkbox(
             "✅ Select all",
             key=f"{key}__all",
