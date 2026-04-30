@@ -400,14 +400,14 @@ def _img_b64(path_str: str) -> str:
     return base64.b64encode(Path(path_str).read_bytes()).decode()
 
 
-_logo_path = Path(__file__).parent / "3sg_logo.png"
+_logo_path = Path(__file__).parent / "ykone_logo.jpg"
 if _logo_path.exists():
     st.markdown(
         f"""
         <div style="display:flex; align-items:center; gap:22px; margin: 6px 0 14px 0;">
-            <img src="data:image/png;base64,{_img_b64(str(_logo_path))}"
+            <img src="data:image/jpeg;base64,{_img_b64(str(_logo_path))}"
                  style="height:78px; width:78px; object-fit:cover;
-                        border-radius:50%; background:#000; padding:2px;
+                        border-radius:18px; background:#000; padding:4px;
                         box-shadow:
                             0 0 14px rgba(255,255,255,0.85),
                             0 0 32px rgba(180,200,255,0.55),
