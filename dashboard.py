@@ -40,9 +40,11 @@ pio.templates.default = "batam"
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
+_PAGE_ICON_PATH = Path(__file__).parent / "3sg_logo.png"
+
 st.set_page_config(
     page_title="Meta Ads Dashboard",
-    page_icon="📊",
+    page_icon=str(_PAGE_ICON_PATH) if _PAGE_ICON_PATH.exists() else "📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
