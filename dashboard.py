@@ -1055,7 +1055,7 @@ with tab3:
             fig = px.bar(
                 ig_totals[ig_totals["Total"] > 0],
                 x="Metric", y="Total", color="Metric",
-                title="Instagram & messaging totals", text_auto=".2s",
+                title="Messaging & saves totals", text_auto=".2s",
             )
             fig.update_layout(height=420, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
