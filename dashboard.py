@@ -1,9 +1,10 @@
 """
-Batam Meta Ads Dashboard
-Interactive Streamlit dashboard for Facebook/Instagram campaign analytics.
+Biocyte Meta Ads Dashboard
+Interactive Streamlit dashboard for the Biocyte Meta Ads export.
 """
 from pathlib import Path
 import base64
+import re
 
 import pandas as pd
 import plotly.express as px
@@ -43,7 +44,7 @@ pio.templates.default = "batam"
 _PAGE_ICON_PATH = Path(__file__).parent / "3sg_logo.png"
 
 st.set_page_config(
-    page_title="Meta Ads Dashboard",
+    page_title="Biocyte Meta Ads Dashboard",
     page_icon=str(_PAGE_ICON_PATH) if _PAGE_ICON_PATH.exists() else "📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -247,83 +248,127 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-DATA_FILE = Path(__file__).parent / "mg_batam.xlsx"
-PLATFORM_FILE = Path(__file__).parent / "mg_batam_plateform.csv"
+# ---------------------------------------------------------------------------
+# Data source — Biocyte Meta Ads export
+# ---------------------------------------------------------------------------
+DATA_FILE = Path(__file__).parent / "Biocyte 29-avr-2023-28-mai-2026.xlsx"
 
-# Column name constants (French headers from the source file)
-COL_START = "Début des rapports"
-COL_END = "Fin des rapports"
-COL_CAMPAIGN = "Nom de la campagne"
-COL_AGE = "Âge"
-COL_PLATFORM = "Plateforme"
-COL_MONTH = "mois"
-COL_YEAR = "annee"
-COL_RESULT = "Résultats"
-COL_OBJECTIVE = "Indicateur de résultats"
-COL_REACH = "Couverture"
-COL_IMPRESSIONS = "Impressions"
-COL_FREQ = "Répétition"
-COL_CPM = "CPM (Coût pour 1\u00a0000\u00a0impressions) (USD)"
-COL_CLICKS = "Clics (tous)"
-COL_CTR = "CTR (tous)"
-COL_CPC_ALL = "CPC (tous) (USD)"
-COL_POST_ENG = "Interactions avec la publication"
-COL_COMMENTS = "Commentaires sur la publication"
-COL_REACTIONS = "Réactions à une publication"
-COL_SHARES = "Partages de publications"
-COL_LIKES = "J\u2019aime sur Facebook"
-COL_LINK_CLICKS = "Clics sur un lien"
-COL_LINK_CPC = "CPC (coût par clic sur un lien) (USD)"
-COL_THRUPLAYS = "ThruPlays"
-COL_3SEC_VIEWS = "Lectures de vidéo de 3 secondes"
-COL_IG_FOLLOWERS = "Followers sur Instagram"
-COL_MSG = "Conversations par messages démarrées"
-COL_PURCHASES = "Achats"
-COL_ADD_CART = "Ajouts au panier"
-COL_PAY_INFO = "Ajouts d\u2019informations de paiement"
-COL_CHECKOUT = "Paiements initiés"
-COL_LEADS = "Prospects"
-COL_CONTENT_VIEWS = "Vues de contenu"
-COL_ROAS = "ROAS (retour sur les dépenses publicitaires) des achats"
-COL_CONV_RATE = "Conversion rate"
-COL_COST_PER_RESULT = "Coût par résultat"
+# Column name constants (French headers from the Biocyte source file)
+COL_START          = "Début des rapports"
+COL_END            = "Fin des rapports"
+COL_AD             = "Nom de la publicité"
+COL_CAMPAIGN       = "Nom de la campagne"
+COL_ADSET          = "Nom de l\u2019ensemble de publicités"  # curly apostrophe
+COL_RESULT         = "Résultats"
+COL_OBJECTIVE      = "Indicateur de résultats"
+COL_SPEND          = "Montant dépensé (EUR)"
+COL_REACH          = "Couverture"
+COL_IMPRESSIONS    = "Impressions"
+COL_FREQ           = "Répétition"
+COL_3SEC_VIEWS     = "Lectures de vidéo de 3 secondes"
+COL_THRUPLAYS      = "ThruPlays"
+COL_CLICKS         = "Clics (tous)"
+COL_LINK_CLICKS    = "Clics sur un lien"
+COL_UNIQUE_LCLICKS = "Clics uniques sur un lien"
+COL_CTR            = "CTR (tous)"
+COL_LANDING_VIEWS  = "Vues de page de destination"
+COL_IG_VISITS      = "Visites du profil\u00a0Instagram"
+COL_POST_ENG       = "Interactions avec la publication"
+COL_REACTIONS      = "Réactions à une publication"
+COL_COMMENTS       = "Commentaires sur la publication"
+COL_SHARES         = "Partages de publications"
+COL_LIKES          = "J\u2019aime sur Facebook"          # curly apostrophe
+COL_IG_FOLLOWERS   = "Followers sur Instagram"
+COL_MSG            = "Conversations par messages démarrées"
+COL_CONTENT_VIEWS  = "Vues de contenu"
+COL_ADD_CART       = "Ajouts au panier"
+COL_CHECKOUT       = "Paiements initiés"
+COL_PAY_INFO       = "Ajouts d\u2019informations de paiement"  # curly apostrophe
+COL_PURCHASES      = "Achats"
+COL_CART_VALUE     = "Valeur de conversion des ajouts au panier"
+COL_ROAS           = "ROAS (retour sur les dépenses publicitaires) des achats"
+COL_LEADS          = "Prospects"
+COL_SIGNUPS        = "Inscriptions terminées"
+COL_CPR            = "Coût par résultat"
+COL_CPM            = "CPM (Coût pour 1\u00a0000\u00a0impressions) (EUR)"
+COL_CPC_ALL        = "CPC (tous) (EUR)"
+COL_LINK_CPC       = "CPC (coût par clic sur un lien) (EUR)"
+COL_CP_THRUPLAY    = "Coût par ThruPlay (EUR)"
+COL_CP_POST_ENG    = "Coût par interaction avec une publication (EUR)"
+COL_CP_LANDING     = "Coût par vue de page de destination (EUR)"
+COL_CP_CONTENT     = "Coût par vue de contenu (EUR)"
+COL_CP_CART        = "Coût par ajout au panier (EUR)"
+COL_CP_PAY         = "Coût par ajout des informations de paiement (EUR)"
+COL_CP_CHECKOUT    = "Coût par paiement initié (EUR)"
+COL_CP_PURCHASE    = "Coût par achat (EUR)"
+COL_CP_LEAD        = "Coût par prospect (EUR)"
+COL_CP_SIGNUP      = "Coût par inscription terminée (EUR)"
+
+NUMERIC_COLS = [
+    COL_RESULT, COL_SPEND, COL_REACH, COL_IMPRESSIONS, COL_FREQ,
+    COL_3SEC_VIEWS, COL_THRUPLAYS, COL_CLICKS, COL_LINK_CLICKS,
+    COL_UNIQUE_LCLICKS, COL_CTR, COL_LANDING_VIEWS, COL_IG_VISITS,
+    COL_POST_ENG, COL_REACTIONS, COL_COMMENTS, COL_SHARES, COL_LIKES,
+    COL_IG_FOLLOWERS, COL_MSG, COL_CONTENT_VIEWS, COL_ADD_CART,
+    COL_CHECKOUT, COL_PAY_INFO, COL_PURCHASES, COL_CART_VALUE, COL_ROAS,
+    COL_LEADS, COL_SIGNUPS, COL_CPR, COL_CPM, COL_CPC_ALL, COL_LINK_CPC,
+    COL_CP_THRUPLAY, COL_CP_POST_ENG, COL_CP_LANDING, COL_CP_CONTENT,
+    COL_CP_CART, COL_CP_PAY, COL_CP_CHECKOUT, COL_CP_PURCHASE,
+    COL_CP_LEAD, COL_CP_SIGNUP,
+]
 
 
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
-@st.cache_data(show_spinner="Loading data…")
-def load_data(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path)
+COL_GOAL   = "Goal"             # derived: text between '-' and '(' in campaign name
+COL_BUDGET = "Budget (€)"        # derived: number before '€' inside parentheses
+
+# e.g. "MAY- Lead Gen (350€ budget engagement)" → goal="Lead Gen", budget=350
+_GOAL_RE   = re.compile(r"-\s*([^()\-]+?)\s*\(")
+_BUDGET_RE = re.compile(r"\(\s*(\d+(?:[.,]\d+)?)\s*€")
+
+
+def _extract_goal(name) -> str | None:
+    if not isinstance(name, str):
+        return None
+    m = _GOAL_RE.search(name)
+    return m.group(1).strip() if m else None
+
+
+def _extract_budget(name) -> float | None:
+    if not isinstance(name, str):
+        return None
+    m = _BUDGET_RE.search(name)
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     for c in (COL_START, COL_END):
         if c in df.columns:
             df[c] = pd.to_datetime(df[c], errors="coerce")
-    # Estimated spend = clicks * CPC (proxy when no spend column exists)
-    df["Spend (est.)"] = (df[COL_CLICKS].fillna(0) * df[COL_CPC_ALL].fillna(0)).round(2)
+    for c in NUMERIC_COLS:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    if COL_CAMPAIGN in df.columns:
+        df[COL_GOAL]   = df[COL_CAMPAIGN].apply(_extract_goal)
+        df[COL_BUDGET] = df[COL_CAMPAIGN].apply(_extract_budget)
     return df
+
+
+@st.cache_data(show_spinner="Loading data…")
+def load_data(path: Path) -> pd.DataFrame:
+    return _prepare(pd.read_excel(path))
 
 
 @st.cache_data
 def load_uploaded(file) -> pd.DataFrame:
-    df = pd.read_excel(file)
-    for c in (COL_START, COL_END):
-        if c in df.columns:
-            df[c] = pd.to_datetime(df[c], errors="coerce")
-    df["Spend (est.)"] = (df[COL_CLICKS].fillna(0) * df[COL_CPC_ALL].fillna(0)).round(2)
-    return df
-
-
-@st.cache_data(show_spinner="Loading platform data…")
-def load_platform_data(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
-    for c in (COL_START, COL_END):
-        if c in df.columns:
-            df[c] = pd.to_datetime(df[c], errors="coerce")
-    df["Spend (est.)"] = (df[COL_CLICKS].fillna(0) * df[COL_CPC_ALL].fillna(0)).round(2)
-    return df
-
-
-pdf = load_platform_data(PLATFORM_FILE) if PLATFORM_FILE.exists() else None
+    return _prepare(pd.read_excel(file))
 
 
 # ---------------------------------------------------------------------------
@@ -331,15 +376,17 @@ pdf = load_platform_data(PLATFORM_FILE) if PLATFORM_FILE.exists() else None
 # ---------------------------------------------------------------------------
 st.sidebar.title("⚙️ Controls")
 
-uploaded = st.sidebar.file_uploader("Upload Meta Ads export (.xlsx)", type=["xlsx"])
+uploaded = st.sidebar.file_uploader(
+    "Upload Meta Ads export (.xlsx)", type=["xlsx"]
+)
 if uploaded is not None:
     df = load_uploaded(uploaded)
 elif DATA_FILE.exists():
     df = load_data(DATA_FILE)
 else:
     st.error(
-        f"No data file found. Place `mg_batam.xlsx` next to `dashboard.py` "
-        f"or upload an export in the sidebar."
+        f"No data file found. Place `{DATA_FILE.name}` next to "
+        f"`dashboard.py` or upload an export in the sidebar."
     )
     st.stop()
 
@@ -347,25 +394,22 @@ st.sidebar.markdown("### Filters")
 
 
 def _toggle_all(key: str, options: list) -> None:
-    """Callback: mirror the 'Select all' checkbox onto every option."""
+    """Mirror the 'Select all' checkbox onto every option."""
     val = st.session_state[f"{key}__all"]
     for opt in options:
         st.session_state[f"{key}__opt__{opt}"] = val
 
 
 def _toggle_one(key: str, options: list) -> None:
-    """Callback: keep the 'Select all' checkbox in sync with the children."""
+    """Keep the 'Select all' checkbox in sync with the children."""
     st.session_state[f"{key}__all"] = all(
         st.session_state.get(f"{key}__opt__{opt}", False) for opt in options
     )
 
 
 def dropdown_filter(label: str, options: list, key: str, container=None) -> list:
-    """Collapsed dropdown (popover) with a 'Select all' checkbox + one
-    checkbox per option. Returns the list of currently-checked options.
-    """
+    """Collapsed dropdown with 'Select all' + per-option checkboxes."""
     container = container if container is not None else st.sidebar
-    # Initialise per-option state on first run (all selected by default)
     for opt in options:
         ck = f"{key}__opt__{opt}"
         if ck not in st.session_state:
@@ -378,18 +422,14 @@ def dropdown_filter(label: str, options: list, key: str, container=None) -> list
     btn_label = f"{label}  —  {count}/{n} selected"
     with container.expander(btn_label, expanded=False):
         st.checkbox(
-            "✅ Select all",
-            key=f"{key}__all",
-            on_change=_toggle_all,
-            args=(key, options),
+            "✅ Select all", key=f"{key}__all",
+            on_change=_toggle_all, args=(key, options),
         )
         st.divider()
         for opt in options:
             st.checkbox(
-                str(opt),
-                key=f"{key}__opt__{opt}",
-                on_change=_toggle_one,
-                args=(key, options),
+                str(opt), key=f"{key}__opt__{opt}",
+                on_change=_toggle_one, args=(key, options),
             )
     return [opt for opt in options if st.session_state[f"{key}__opt__{opt}"]]
 
@@ -397,44 +437,55 @@ def dropdown_filter(label: str, options: list, key: str, container=None) -> list
 campaigns = sorted(df[COL_CAMPAIGN].dropna().unique().tolist())
 sel_campaigns = dropdown_filter("Campaign", campaigns, key="flt_campaign")
 
-ages = sorted(df[COL_AGE].dropna().unique().tolist())
-sel_ages = dropdown_filter("Age group", ages, key="flt_age")
+adsets = sorted(df[COL_ADSET].dropna().unique().tolist()) if COL_ADSET in df.columns else []
+sel_adsets = (
+    dropdown_filter("Ad set", adsets, key="flt_adset")
+    if adsets else []
+)
+
+ads = sorted(df[COL_AD].dropna().unique().tolist()) if COL_AD in df.columns else []
+sel_ads = (
+    dropdown_filter("Ad name", ads, key="flt_ad")
+    if ads else []
+)
 
 objectives = sorted(df[COL_OBJECTIVE].dropna().unique().tolist())
-sel_obj = dropdown_filter("Objective", objectives, key="flt_objective")
-
-# Platform-view filters (only used inside the Platform tab)
-if pdf is not None and not pdf.empty:
-    with st.sidebar.expander("🔀 Platform view filters", expanded=False):
-        st.caption("Used only on the **Platform (FB vs IG)** tab.")
-        plat_campaigns_all = sorted(pdf[COL_CAMPAIGN].dropna().unique().tolist())
-        sel_pcamp = dropdown_filter(
-            "Campaigns", plat_campaigns_all, key="plat_camp_filter", container=st,
-        )
-else:
-    sel_pcamp = []
-
-mask = (
-    df[COL_CAMPAIGN].isin(sel_campaigns)
-    & df[COL_AGE].isin(sel_ages)
-    & df[COL_OBJECTIVE].isin(sel_obj)
+sel_obj = (
+    dropdown_filter("Objective", objectives, key="flt_objective")
+    if objectives else []
 )
+
+goals = sorted(df[COL_GOAL].dropna().unique().tolist()) if COL_GOAL in df.columns else []
+sel_goals = (
+    dropdown_filter("Campaign goal", goals, key="flt_goal")
+    if goals else []
+)
+
+mask = df[COL_CAMPAIGN].isin(sel_campaigns)
+if adsets:
+    mask &= df[COL_ADSET].isin(sel_adsets)
+if ads:
+    mask &= df[COL_AD].isin(sel_ads)
+if objectives:
+    mask &= df[COL_OBJECTIVE].isin(sel_obj) | df[COL_OBJECTIVE].isna()
+if goals:
+    mask &= df[COL_GOAL].isin(sel_goals) | df[COL_GOAL].isna()
 
 # ---------------------------------------------------------------------------
 # Cross-filter state (set by clicking on charts)
 # ---------------------------------------------------------------------------
 st.session_state.setdefault("xf_campaigns", [])
-st.session_state.setdefault("xf_age", [])
+st.session_state.setdefault("xf_adsets", [])
 st.session_state.setdefault("xf_objective", [])
 
 xf_camp = st.session_state["xf_campaigns"]
-xf_age = st.session_state["xf_age"]
+xf_adset = st.session_state["xf_adsets"]
 xf_obj = st.session_state["xf_objective"]
 
 if xf_camp:
     mask &= df[COL_CAMPAIGN].isin(xf_camp)
-if xf_age:
-    mask &= df[COL_AGE].isin(xf_age)
+if xf_adset and COL_ADSET in df.columns:
+    mask &= df[COL_ADSET].isin(xf_adset)
 if xf_obj:
     mask &= df[COL_OBJECTIVE].isin(xf_obj)
 
@@ -464,7 +515,7 @@ if _logo_path.exists():
                         animation: ykoneGlow 3.2s ease-in-out infinite;" />
             <div>
                 <h1 style="margin:0; padding:0; font-size:2.1rem;">
-                    Meta Ads Performance Dashboard
+                    Biocyte — Meta Ads Performance Dashboard
                 </h1>
             </div>
         </div>
@@ -490,19 +541,28 @@ if _logo_path.exists():
         unsafe_allow_html=True,
     )
 else:
-    st.title("Meta Ads Performance Dashboard")
+    st.title("Biocyte — Meta Ads Performance Dashboard")
+
+# Reporting period
+period_txt = ""
+if COL_START in fdf.columns and COL_END in fdf.columns and not fdf.empty:
+    dmin = fdf[COL_START].min()
+    dmax = fdf[COL_END].max()
+    if pd.notna(dmin) and pd.notna(dmax):
+        period_txt = f" · {dmin:%d %b %Y} → {dmax:%d %b %Y}"
 
 st.caption(
     f"{len(fdf):,} rows · {fdf[COL_CAMPAIGN].nunique()} campaigns · "
-    f"{fdf[COL_AGE].nunique()} age groups"
+    f"{fdf[COL_ADSET].nunique() if COL_ADSET in fdf.columns else 0} ad sets · "
+    f"{fdf[COL_AD].nunique() if COL_AD in fdf.columns else 0} ads{period_txt}"
 )
 
 # Active cross-filter chips + reset
 active = []
 if xf_camp:
     active.append(f"Campaign: {', '.join(map(str, xf_camp))}")
-if xf_age:
-    active.append(f"Age: {', '.join(map(str, xf_age))}")
+if xf_adset:
+    active.append(f"Ad set: {', '.join(map(str, xf_adset))}")
 if xf_obj:
     active.append(f"Objective: {', '.join(map(str, xf_obj))}")
 if active:
@@ -512,7 +572,7 @@ if active:
     with btn_col:
         if st.button("✖ Clear", use_container_width=True):
             st.session_state["xf_campaigns"] = []
-            st.session_state["xf_age"] = []
+            st.session_state["xf_adsets"] = []
             st.session_state["xf_objective"] = []
             st.rerun()
 
@@ -520,23 +580,23 @@ if fdf.empty:
     st.warning("No data matches the current filters.")
     st.stop()
 
+
 # ---------------------------------------------------------------------------
-# Formatting helpers (used across tabs)
+# Formatting helpers
 # ---------------------------------------------------------------------------
 def fmt_int(x):
     return f"{int(x):,}" if pd.notna(x) else "—"
 
 
 def fmt_money(x):
-    return f"${x:,.2f}" if pd.notna(x) else "—"
+    return f"€{x:,.2f}" if pd.notna(x) else "—"
 
 
 def fmt_pct(x):
     return f"{x:.2f}%" if pd.notna(x) else "—"
 
 
-def render_summary(title: str, takeaways: list[str], icon: str = "💡"):
-    """Render a highlighted summary card with key takeaways for a tab."""
+def render_summary(title: str, takeaways: list, icon: str = "💡"):
     items = "".join(f"<li>{t}</li>" for t in takeaways if t)
     st.markdown(
         f"""
@@ -550,7 +610,6 @@ def render_summary(title: str, takeaways: list[str], icon: str = "💡"):
 
 
 def safe_top(df, group_col, value_col, agg="sum"):
-    """Return (label, value) for the top group, or (None, None)."""
     if df.empty or group_col not in df.columns or value_col not in df.columns:
         return None, None
     g = df.groupby(group_col, as_index=False)[value_col].agg(agg).dropna()
@@ -560,18 +619,194 @@ def safe_top(df, group_col, value_col, agg="sum"):
     return row[group_col], row[value_col]
 
 
+def col_sum(df, c):
+    return df[c].sum() if c in df.columns else 0
+
+
+def col_mean(df, c):
+    if c not in df.columns:
+        return None
+    s = df[c].dropna()
+    return s.mean() if not s.empty else None
+
+
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab_plat, tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["🌐 Global Overview Meta", "📈 Reach & Impressions", "💰 Cost & Efficiency",
-     "❤️ Engagement", "🎯 Audience & Funnel", "🗂️ Raw Data"]
+tab_over, tab1, tab2, tab3, tab_targets, tab4, tab5 = st.tabs(
+    ["🌐 Overview", "📈 Reach & Impressions", "💰 Cost & Efficiency",
+     "❤️ Engagement", "🧭 Core Targets", "🎯 Funnel & Conversions",
+     "🗂️ Raw Data"]
 )
 
-# ---- Tab 1: Reach & Impressions ----
-with tab1:
-    st.caption("💡 **Tip:** click bars / slices below to filter the whole dashboard.")
+# ---------------------------------------------------------------------------
+# Tab Overview — top KPIs + headline charts
+# ---------------------------------------------------------------------------
+with tab_over:
+    total_spend = col_sum(fdf, COL_SPEND)
+    total_imp = col_sum(fdf, COL_IMPRESSIONS)
+    total_reach = col_sum(fdf, COL_REACH)
+    total_clicks = col_sum(fdf, COL_CLICKS)
+    total_purchases = col_sum(fdf, COL_PURCHASES)
+    total_leads = col_sum(fdf, COL_LEADS)
+    avg_ctr = col_mean(fdf, COL_CTR)
+    avg_cpc = col_mean(fdf, COL_CPC_ALL)
+    avg_cpm = col_mean(fdf, COL_CPM)
+    avg_freq = (total_imp / total_reach) if total_reach else None
+    avg_roas = col_mean(fdf, COL_ROAS)
 
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Total Spend", fmt_money(total_spend))
+    k2.metric("Impressions", fmt_int(total_imp))
+    k3.metric("Reach", fmt_int(total_reach))
+    k4.metric("Clicks", fmt_int(total_clicks))
+    k5.metric("Purchases", fmt_int(total_purchases))
+
+    k6, k7, k8, k9, k10 = st.columns(5)
+    k6.metric("Avg CTR", fmt_pct(avg_ctr))
+    k7.metric("Avg CPC", fmt_money(avg_cpc))
+    k8.metric("Avg CPM", fmt_money(avg_cpm))
+    k9.metric("Avg Frequency", f"{avg_freq:.2f}" if avg_freq else "—")
+    k10.metric("Avg ROAS", f"{avg_roas:.2f}" if avg_roas else "—")
+
+    st.divider()
+
+    # ── Budget tracker (from "(350€ ...)" captured in campaign names) ──────
+    if COL_BUDGET in fdf.columns and fdf[COL_BUDGET].notna().any():
+        # Budget is defined at the campaign level → take ONE budget per campaign
+        camp_budget = (
+            fdf.dropna(subset=[COL_BUDGET])
+            .groupby(COL_CAMPAIGN, as_index=False)[COL_BUDGET].first()
+        )
+        camp_spend = (
+            fdf.groupby(COL_CAMPAIGN, as_index=False)[COL_SPEND].sum()
+            .rename(columns={COL_SPEND: "Spent"})
+        )
+        bud = camp_budget.merge(camp_spend, on=COL_CAMPAIGN, how="left").fillna({"Spent": 0})
+        bud["Remaining"] = bud[COL_BUDGET] - bud["Spent"]
+        bud["Used (%)"]  = (bud["Spent"] / bud[COL_BUDGET] * 100).where(bud[COL_BUDGET] > 0)
+
+        total_budget    = bud[COL_BUDGET].sum()
+        total_spent     = bud["Spent"].sum()
+        total_remaining = total_budget - total_spent
+        used_pct        = (total_spent / total_budget * 100) if total_budget else None
+
+        st.markdown("### 💼 Budget tracker")
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("Total budget",     fmt_money(total_budget))
+        b2.metric("Spent so far",     fmt_money(total_spent),
+                  delta=f"{used_pct:.1f}% used" if used_pct is not None else None)
+        b3.metric("💰 Budget remaining", fmt_money(total_remaining),
+                  delta=f"{(total_remaining/total_budget*100):.1f}% left" if total_budget else None,
+                  delta_color="inverse")
+        b4.metric("Campaigns w/ budget", f"{len(bud)}")
+
+        with st.expander("Per-campaign budget breakdown", expanded=False):
+            show = bud.copy()
+            show[COL_BUDGET]   = show[COL_BUDGET].map(fmt_money)
+            show["Spent"]      = show["Spent"].map(fmt_money)
+            show["Remaining"]  = show["Remaining"].map(fmt_money)
+            show["Used (%)"]   = show["Used (%)"].map(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+    # Spend by campaign
+    by_camp = (
+        fdf.groupby(COL_CAMPAIGN, as_index=False)
+        .agg(Spend=(COL_SPEND, "sum"), Impressions=(COL_IMPRESSIONS, "sum"))
+        .sort_values("Spend", ascending=False)
+    )
+    col_a, col_b = st.columns([3, 2])
+    with col_a:
+        fig = px.bar(
+            by_camp, x=COL_CAMPAIGN, y="Spend",
+            color="Spend", color_continuous_scale="Purples",
+            title="Estimated spend by campaign (€)",
+            text_auto=".2f",
+        )
+        fig.update_layout(xaxis_tickangle=-30, height=440, coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+    with col_b:
+        if COL_OBJECTIVE in fdf.columns:
+            by_obj = (
+                fdf.dropna(subset=[COL_OBJECTIVE])
+                .groupby(COL_OBJECTIVE, as_index=False)[COL_SPEND].sum()
+            )
+            if not by_obj.empty:
+                fig = px.pie(
+                    by_obj, names=COL_OBJECTIVE, values=COL_SPEND,
+                    hole=0.55, title="Spend share by objective",
+                )
+                fig.update_layout(height=440)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No objective data in selection.")
+
+    # ── Campaign goal breakdown ──────────────────────────────────────────
+    if COL_GOAL in fdf.columns and fdf[COL_GOAL].notna().any():
+        st.markdown("### 🎯 Performance by campaign goal")
+        goal_df = (
+            fdf.dropna(subset=[COL_GOAL])
+            .groupby(COL_GOAL, as_index=False)
+            .agg(
+                Spend=(COL_SPEND, "sum"),
+                Impressions=(COL_IMPRESSIONS, "sum"),
+                Clicks=(COL_CLICKS, "sum"),
+                Purchases=(COL_PURCHASES, "sum"),
+                Leads=(COL_LEADS, "sum"),
+                CTR=(COL_CTR, "mean"),
+            )
+            .sort_values("Spend", ascending=False)
+        )
+        g1, g2 = st.columns(2)
+        with g1:
+            fig = px.bar(
+                goal_df, x=COL_GOAL, y="Spend",
+                color=COL_GOAL, title="Spend by campaign goal (€)",
+                text_auto=".2f",
+            )
+            fig.update_layout(height=380, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+        with g2:
+            metric_options = ["Impressions", "Clicks", "Purchases", "Leads", "CTR"]
+            pick = st.selectbox("Metric", metric_options, key="goal_metric")
+            fig = px.bar(
+                goal_df.sort_values(pick, ascending=False),
+                x=COL_GOAL, y=pick, color=COL_GOAL,
+                title=f"{pick} by campaign goal",
+                text_auto=".2s" if pick != "CTR" else ".3f",
+            )
+            fig.update_layout(height=380, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+    top_camp, top_spend = safe_top(fdf, COL_CAMPAIGN, COL_SPEND)
+    top_ad, top_ad_imp = safe_top(fdf, COL_AD, COL_IMPRESSIONS) if COL_AD in fdf.columns else (None, None)
+    top_goal, top_goal_spend = (
+        safe_top(fdf, COL_GOAL, COL_SPEND)
+        if COL_GOAL in fdf.columns and fdf[COL_GOAL].notna().any()
+        else (None, None)
+    )
+    render_summary(
+        "Account snapshot",
+        [
+            f"Total spend: <b>{fmt_money(total_spend)}</b> across <b>{fdf[COL_CAMPAIGN].nunique()}</b> campaigns.",
+            f"Delivered <b>{fmt_int(total_imp)}</b> impressions to <b>{fmt_int(total_reach)}</b> unique users (freq ≈ <b>{avg_freq:.2f}</b>)." if avg_freq else "",
+            f"Top spender: <b>{top_camp}</b> ({fmt_money(top_spend)})." if top_camp else "",
+            f"Top campaign goal by spend: <b>{top_goal}</b> ({fmt_money(top_goal_spend)})." if top_goal else "",
+            f"Top ad by impressions: <b>{top_ad}</b> ({fmt_int(top_ad_imp)})." if top_ad else "",
+            f"Conversions: <b>{fmt_int(total_purchases)}</b> purchases · <b>{fmt_int(total_leads)}</b> leads · avg ROAS <b>{avg_roas:.2f}</b>." if avg_roas else f"Conversions: <b>{fmt_int(total_purchases)}</b> purchases · <b>{fmt_int(total_leads)}</b> leads.",
+        ],
+        icon="🌐",
+    )
+
+# ---------------------------------------------------------------------------
+# Tab 1 — Reach & Impressions
+# ---------------------------------------------------------------------------
+with tab1:
+    st.caption("💡 **Tip:** click bars / slices to filter the whole dashboard.")
+
+    # Per-campaign impressions vs reach
     by_camp = (
         fdf.groupby(COL_CAMPAIGN, as_index=False)[[COL_IMPRESSIONS, COL_REACH]]
         .sum()
@@ -582,8 +817,8 @@ with tab1:
     fig.add_bar(name="Impressions", x=by_camp[COL_CAMPAIGN], y=by_camp[COL_IMPRESSIONS])
     fig.add_bar(name="Reach", x=by_camp[COL_CAMPAIGN], y=by_camp[COL_REACH])
     fig.update_layout(
-        barmode="group", title="Top 20 Campaigns — Impressions vs Reach (click a bar to filter)",
-        xaxis_tickangle=-40, height=520, legend_orientation="h",
+        barmode="group", title="Campaigns — Impressions vs Reach (click a bar to filter)",
+        xaxis_tickangle=-30, height=480, legend_orientation="h",
     )
     sel = st.plotly_chart(
         fig, use_container_width=True, key="chart_camp",
@@ -596,482 +831,509 @@ with tab1:
 
     col_a, col_b = st.columns(2)
     with col_a:
-        by_obj = fdf.groupby(COL_OBJECTIVE, as_index=False)[COL_IMPRESSIONS].sum()
-        fig = px.pie(by_obj, names=COL_OBJECTIVE, values=COL_IMPRESSIONS,
-                     title="Impressions share by objective (click a slice)", hole=0.4)
-        sel = st.plotly_chart(
-            fig, use_container_width=True, key="chart_obj",
-            on_select="rerun", selection_mode=("points",),
-        )
-        picks = [p["label"] for p in (sel.selection.get("points") or [])]
-        if picks and set(picks) != set(st.session_state["xf_objective"]):
-            st.session_state["xf_objective"] = picks
-            st.rerun()
+        if COL_OBJECTIVE in fdf.columns:
+            by_obj = (
+                fdf.dropna(subset=[COL_OBJECTIVE])
+                .groupby(COL_OBJECTIVE, as_index=False)[COL_IMPRESSIONS].sum()
+            )
+            if not by_obj.empty:
+                fig = px.pie(
+                    by_obj, names=COL_OBJECTIVE, values=COL_IMPRESSIONS,
+                    title="Impressions share by objective (click a slice)",
+                    hole=0.4,
+                )
+                sel = st.plotly_chart(
+                    fig, use_container_width=True, key="chart_obj",
+                    on_select="rerun", selection_mode=("points",),
+                )
+                picks = [p["label"] for p in (sel.selection.get("points") or [])]
+                if picks and set(picks) != set(st.session_state["xf_objective"]):
+                    st.session_state["xf_objective"] = picks
+                    st.rerun()
+            else:
+                st.info("No objective data in selection.")
     with col_b:
-        by_age = fdf.groupby(COL_AGE, as_index=False)[[COL_IMPRESSIONS, COL_REACH]].sum()
-        fig = px.bar(by_age, x=COL_AGE, y=[COL_IMPRESSIONS, COL_REACH],
-                     barmode="group", title="Impressions & Reach by age group (click a bar)")
-        sel = st.plotly_chart(
-            fig, use_container_width=True, key="chart_age",
-            on_select="rerun", selection_mode=("points",),
-        )
-        picks = [p["x"] for p in (sel.selection.get("points") or [])]
-        if picks and set(picks) != set(st.session_state["xf_age"]):
-            st.session_state["xf_age"] = picks
-            st.rerun()
+        if COL_ADSET in fdf.columns:
+            by_adset = (
+                fdf.groupby(COL_ADSET, as_index=False)[[COL_IMPRESSIONS, COL_REACH]]
+                .sum()
+                .sort_values(COL_IMPRESSIONS, ascending=False)
+                .head(15)
+            )
+            fig = px.bar(
+                by_adset, x=COL_ADSET, y=[COL_IMPRESSIONS, COL_REACH],
+                barmode="group",
+                title="Impressions & Reach by ad set (click a bar)",
+            )
+            fig.update_layout(xaxis_tickangle=-30, height=460)
+            sel = st.plotly_chart(
+                fig, use_container_width=True, key="chart_adset",
+                on_select="rerun", selection_mode=("points",),
+            )
+            picks = [p["x"] for p in (sel.selection.get("points") or [])]
+            if picks and set(picks) != set(st.session_state["xf_adsets"]):
+                st.session_state["xf_adsets"] = picks
+                st.rerun()
 
-    # Summary takeaways
+    # Top ads by impressions
+    if COL_AD in fdf.columns:
+        by_ad = (
+            fdf.groupby(COL_AD, as_index=False)[[COL_IMPRESSIONS, COL_REACH, COL_FREQ]]
+            .agg({COL_IMPRESSIONS: "sum", COL_REACH: "sum", COL_FREQ: "mean"})
+            .sort_values(COL_IMPRESSIONS, ascending=False)
+            .head(15)
+        )
+        fig = px.bar(
+            by_ad, x=COL_AD, y=COL_IMPRESSIONS,
+            color=COL_FREQ, color_continuous_scale="Plasma",
+            title="Top ads by impressions (color = avg frequency)",
+            text_auto=".2s",
+        )
+        fig.update_layout(xaxis_tickangle=-30, height=460)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Summary
     top_camp, top_imp = safe_top(fdf, COL_CAMPAIGN, COL_IMPRESSIONS)
-    top_age, top_age_imp = safe_top(fdf, COL_AGE, COL_IMPRESSIONS)
-    top_obj, _ = safe_top(fdf, COL_OBJECTIVE, COL_IMPRESSIONS)
-    total_imp = fdf[COL_IMPRESSIONS].sum()
-    total_reach = fdf[COL_REACH].sum()
-    avg_freq = (total_imp / total_reach) if total_reach else None
+    top_adset, top_adset_imp = (
+        safe_top(fdf, COL_ADSET, COL_IMPRESSIONS) if COL_ADSET in fdf.columns else (None, None)
+    )
+    top_obj, _ = safe_top(fdf, COL_OBJECTIVE, COL_IMPRESSIONS) if COL_OBJECTIVE in fdf.columns else (None, None)
+    total_imp = col_sum(fdf, COL_IMPRESSIONS)
+    total_reach = col_sum(fdf, COL_REACH)
+    freq = (total_imp / total_reach) if total_reach else None
     render_summary(
         "Reach & Impressions — key takeaways",
         [
-            f"Total <b>{fmt_int(total_imp)}</b> impressions delivered to <b>{fmt_int(total_reach)}</b> unique users.",
+            f"Total <b>{fmt_int(total_imp)}</b> impressions to <b>{fmt_int(total_reach)}</b> unique users.",
             f"Top campaign: <b>{top_camp}</b> with <b>{fmt_int(top_imp)}</b> impressions." if top_camp else "",
-            f"Best-performing age group: <b>{top_age}</b> ({fmt_int(top_age_imp)} impressions)." if top_age else "",
+            f"Top ad set: <b>{top_adset}</b> ({fmt_int(top_adset_imp)} impressions)." if top_adset else "",
             f"Leading objective: <b>{top_obj}</b>." if top_obj else "",
-            f"Average frequency ≈ <b>{avg_freq:.2f}</b> impressions per user." if avg_freq else "",
+            f"Average frequency ≈ <b>{freq:.2f}</b> impressions per user." if freq else "",
         ],
         icon="📈",
     )
 
-# ---- Tab 2: Cost & Efficiency ----
+# ---------------------------------------------------------------------------
+# Tab 2 — Cost & Efficiency
+# ---------------------------------------------------------------------------
 with tab2:
+    CHART_HEIGHT = 480
+
     cost_df = (
         fdf.groupby(COL_CAMPAIGN, as_index=False)
         .agg({COL_CTR: "mean", COL_CPC_ALL: "mean", COL_CPM: "mean",
-              "Spend (est.)": "sum"})
-        .sort_values("Spend (est.)", ascending=False)
+              COL_SPEND: "sum"})
+        .sort_values(COL_SPEND, ascending=False)
         .head(20)
     )
 
-    CHART_HEIGHT = 500
-
-    fig = px.bar(cost_df, x=COL_CAMPAIGN, y="Spend (est.)",
-                 title="Estimated spend by campaign (top 20)",
-                 color="Spend (est.)", color_continuous_scale="Blues")
-    fig.update_layout(xaxis_tickangle=-40, height=CHART_HEIGHT)
+    fig = px.bar(
+        cost_df, x=COL_CAMPAIGN, y=COL_SPEND,
+        color=COL_SPEND, color_continuous_scale="Blues",
+        title="Spend by campaign (€)", text_auto=".2f",
+    )
+    fig.update_layout(xaxis_tickangle=-30, height=CHART_HEIGHT, coloraxis_showscale=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    fig = px.bar(cost_df.melt(id_vars=COL_CAMPAIGN,
-                              value_vars=[COL_CTR, COL_CPC_ALL, COL_CPM]),
-                 x=COL_CAMPAIGN, y="value", color="variable", barmode="group",
-                 title="CTR / CPC / CPM by campaign (top 20 by spend)")
-    fig.update_layout(xaxis_tickangle=-40, height=CHART_HEIGHT)
+    fig = px.bar(
+        cost_df.melt(id_vars=COL_CAMPAIGN, value_vars=[COL_CTR, COL_CPC_ALL, COL_CPM]),
+        x=COL_CAMPAIGN, y="value", color="variable", barmode="group",
+        title="Avg CTR / CPC / CPM by campaign",
+    )
+    fig.update_layout(xaxis_tickangle=-30, height=CHART_HEIGHT)
     st.plotly_chart(fig, use_container_width=True)
 
     fig = px.scatter(
         fdf, x=COL_CPC_ALL, y=COL_CTR, size=COL_IMPRESSIONS,
-        color=COL_OBJECTIVE, hover_name=COL_CAMPAIGN,
+        color=COL_OBJECTIVE if COL_OBJECTIVE in fdf.columns else None,
+        hover_name=COL_AD if COL_AD in fdf.columns else COL_CAMPAIGN,
+        hover_data=[COL_CAMPAIGN, COL_ADSET] if COL_ADSET in fdf.columns else [COL_CAMPAIGN],
         title="CTR vs CPC (bubble = Impressions)",
     )
     fig.update_layout(height=CHART_HEIGHT)
     st.plotly_chart(fig, use_container_width=True)
 
-    # Summary takeaways
-    total_spend = fdf["Spend (est.)"].sum()
-    avg_ctr = fdf[COL_CTR].mean()
-    avg_cpc = fdf[COL_CPC_ALL].mean()
-    avg_cpm = fdf[COL_CPM].mean()
-    top_spender, top_spend_val = safe_top(fdf, COL_CAMPAIGN, "Spend (est.)")
-    eff = fdf.groupby(COL_CAMPAIGN, as_index=False).agg(
-        ctr=(COL_CTR, "mean"), cpc=(COL_CPC_ALL, "mean"), imp=(COL_IMPRESSIONS, "sum")
+    # Treemap spend Campaign → Ad set → Ad
+    tree_path = [c for c in [COL_CAMPAIGN, COL_ADSET, COL_AD] if c in fdf.columns]
+    if len(tree_path) >= 2:
+        tree_df = fdf.dropna(subset=tree_path + [COL_SPEND])
+        tree_df = tree_df[tree_df[COL_SPEND] > 0]
+        if not tree_df.empty:
+            fig = px.treemap(
+                tree_df, path=tree_path, values=COL_SPEND,
+                color=COL_SPEND, color_continuous_scale="Purples",
+                title="Spend breakdown — Campaign → Ad set → Ad",
+            )
+            fig.update_layout(height=520, coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Summary
+    total_spend = col_sum(fdf, COL_SPEND)
+    avg_ctr = col_mean(fdf, COL_CTR)
+    avg_cpc = col_mean(fdf, COL_CPC_ALL)
+    avg_cpm = col_mean(fdf, COL_CPM)
+    top_spender, top_spend_val = safe_top(fdf, COL_CAMPAIGN, COL_SPEND)
+    eff = (
+        fdf.groupby(COL_CAMPAIGN, as_index=False)
+        .agg(ctr=(COL_CTR, "mean"), cpc=(COL_CPC_ALL, "mean"),
+             imp=(COL_IMPRESSIONS, "sum"))
     )
-    eff = eff[eff["imp"] >= eff["imp"].median()]
-    best_ctr_camp = eff.sort_values("ctr", ascending=False).iloc[0] if not eff.empty else None
-    cheapest_camp = eff[eff["cpc"] > 0].sort_values("cpc").iloc[0] if not eff[eff["cpc"] > 0].empty else None
+    eff_med = eff[eff["imp"] >= eff["imp"].median()] if not eff.empty else eff
+    best_ctr_camp = eff_med.sort_values("ctr", ascending=False).iloc[0] if not eff_med.empty else None
+    cheapest = eff_med[eff_med["cpc"] > 0].sort_values("cpc").iloc[0] if not eff_med[eff_med["cpc"] > 0].empty else None
     render_summary(
         "Cost & Efficiency — key takeaways",
         [
-            f"Total estimated spend: <b>{fmt_money(total_spend)}</b>.",
+            f"Total spend: <b>{fmt_money(total_spend)}</b>.",
             f"Avg CTR <b>{fmt_pct(avg_ctr)}</b> · avg CPC <b>{fmt_money(avg_cpc)}</b> · avg CPM <b>{fmt_money(avg_cpm)}</b>.",
             f"Biggest spender: <b>{top_spender}</b> ({fmt_money(top_spend_val)})." if top_spender else "",
             f"Highest CTR (above-median reach): <b>{best_ctr_camp[COL_CAMPAIGN]}</b> at <b>{fmt_pct(best_ctr_camp['ctr'])}</b>." if best_ctr_camp is not None else "",
-            f"Lowest CPC (above-median reach): <b>{cheapest_camp[COL_CAMPAIGN]}</b> at <b>{fmt_money(cheapest_camp['cpc'])}</b>." if cheapest_camp is not None else "",
+            f"Lowest CPC (above-median reach): <b>{cheapest[COL_CAMPAIGN]}</b> at <b>{fmt_money(cheapest['cpc'])}</b>." if cheapest is not None else "",
         ],
         icon="💰",
     )
 
-# ---- Tab 3: Engagement ----
+# ---------------------------------------------------------------------------
+# Tab 3 — Engagement
+# ---------------------------------------------------------------------------
 with tab3:
-    eng_cols = [COL_LIKES, COL_REACTIONS, COL_COMMENTS, COL_SHARES]
+    eng_cols = [c for c in [COL_LIKES, COL_REACTIONS, COL_COMMENTS, COL_SHARES]
+                if c in fdf.columns]
 
-    eng = (
-        fdf.groupby(COL_CAMPAIGN, as_index=False)[eng_cols]
-        .sum()
-        .assign(total=lambda d: d[eng_cols].sum(axis=1))
-        .sort_values("total", ascending=False)
-        .head(15)
-        .drop(columns="total")
-    )
-    fig = px.bar(
-        eng.melt(id_vars=COL_CAMPAIGN, var_name="metric", value_name="count"),
-        x=COL_CAMPAIGN, y="count", color="metric", barmode="stack",
-        title="Engagement breakdown — Top 15 campaigns",
-    )
-    fig.update_layout(xaxis_tickangle=-40, height=520)
-    st.plotly_chart(fig, use_container_width=True)
-
-    video = fdf[[COL_CAMPAIGN, COL_3SEC_VIEWS, COL_THRUPLAYS]].dropna(
-        subset=[COL_3SEC_VIEWS, COL_THRUPLAYS], how="all"
-    )
-    if not video.empty:
-        video = video.groupby(COL_CAMPAIGN, as_index=False).sum().sort_values(
-            COL_3SEC_VIEWS, ascending=False
-        ).head(15)
-        fig = px.bar(video, x=COL_CAMPAIGN, y=[COL_3SEC_VIEWS, COL_THRUPLAYS],
-                     barmode="group", title="Video performance")
-        fig.update_layout(xaxis_tickangle=-40, height=520)
+    if eng_cols:
+        eng = (
+            fdf.groupby(COL_CAMPAIGN, as_index=False)[eng_cols]
+            .sum()
+            .assign(total=lambda d: d[eng_cols].sum(axis=1))
+            .sort_values("total", ascending=False)
+            .head(15)
+            .drop(columns="total")
+        )
+        fig = px.bar(
+            eng.melt(id_vars=COL_CAMPAIGN, var_name="metric", value_name="count"),
+            x=COL_CAMPAIGN, y="count", color="metric", barmode="stack",
+            title="Engagement breakdown by campaign",
+        )
+        fig.update_layout(xaxis_tickangle=-30, height=500)
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No video metrics in current selection.")
+        st.info("No engagement metrics in current selection.")
 
-    ig = fdf.groupby(COL_CAMPAIGN, as_index=False)[COL_IG_FOLLOWERS].sum()
-    ig = ig[ig[COL_IG_FOLLOWERS] > 0].sort_values(COL_IG_FOLLOWERS, ascending=False).head(15)
-    if not ig.empty:
-        fig = px.bar(ig, x=COL_CAMPAIGN, y=COL_IG_FOLLOWERS,
-                     title="Instagram followers gained", color=COL_IG_FOLLOWERS,
-                     color_continuous_scale="Magenta")
-        fig.update_layout(xaxis_tickangle=-40, height=520)
-        st.plotly_chart(fig, use_container_width=True)
+    # Video performance
+    video = fdf[[c for c in [COL_AD, COL_3SEC_VIEWS, COL_THRUPLAYS] if c in fdf.columns]]
+    if COL_3SEC_VIEWS in video.columns or COL_THRUPLAYS in video.columns:
+        video = video.dropna(subset=[c for c in [COL_3SEC_VIEWS, COL_THRUPLAYS] if c in video.columns], how="all")
+        if not video.empty and COL_AD in video.columns:
+            grp_cols = [c for c in [COL_3SEC_VIEWS, COL_THRUPLAYS] if c in video.columns]
+            video = (
+                video.groupby(COL_AD, as_index=False)[grp_cols].sum()
+                .sort_values(grp_cols[0], ascending=False).head(15)
+            )
+            fig = px.bar(
+                video, x=COL_AD, y=grp_cols, barmode="group",
+                title="Video performance — top ads",
+            )
+            fig.update_layout(xaxis_tickangle=-30, height=500)
+            st.plotly_chart(fig, use_container_width=True)
 
-    # Summary takeaways
-    totals = {c: fdf[c].sum() for c in eng_cols if c in fdf.columns}
+    # IG & messaging
+    ig_cols = [c for c in [COL_IG_FOLLOWERS, COL_IG_VISITS, COL_MSG, COL_POST_ENG]
+               if c in fdf.columns]
+    if ig_cols:
+        col_a, col_b = st.columns(2)
+        ig_totals = pd.DataFrame({
+            "Metric": [
+                "IG followers gained" if c == COL_IG_FOLLOWERS else
+                "IG profile visits" if c == COL_IG_VISITS else
+                "Messages started" if c == COL_MSG else
+                "Post interactions"
+                for c in ig_cols
+            ],
+            "Total": [col_sum(fdf, c) for c in ig_cols],
+        })
+        with col_a:
+            fig = px.bar(
+                ig_totals[ig_totals["Total"] > 0],
+                x="Metric", y="Total", color="Metric",
+                title="Instagram & messaging totals", text_auto=".2s",
+            )
+            fig.update_layout(height=420, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+        with col_b:
+            if COL_POST_ENG in fdf.columns and COL_AD in fdf.columns:
+                top_eng_ads = (
+                    fdf.groupby(COL_AD, as_index=False)[COL_POST_ENG].sum()
+                    .sort_values(COL_POST_ENG, ascending=False).head(10)
+                )
+                fig = px.bar(
+                    top_eng_ads, x=COL_AD, y=COL_POST_ENG,
+                    title="Top 10 ads by post interactions",
+                    color=COL_POST_ENG, color_continuous_scale="Magenta",
+                )
+                fig.update_layout(xaxis_tickangle=-30, height=420, coloraxis_showscale=False)
+                st.plotly_chart(fig, use_container_width=True)
+
+    # Summary
+    totals = {c: col_sum(fdf, c) for c in eng_cols}
     total_eng = sum(totals.values())
     eng_per_camp = (
         fdf.groupby(COL_CAMPAIGN, as_index=False)[eng_cols].sum()
         .assign(_t=lambda d: d[eng_cols].sum(axis=1))
         .sort_values("_t", ascending=False)
-    )
-    top_eng_camp = eng_per_camp.iloc[0] if not eng_per_camp.empty else None
-    dominant_metric = max(totals, key=totals.get) if totals else None
-    video_views = fdf[COL_3SEC_VIEWS].sum() if COL_3SEC_VIEWS in fdf.columns else 0
-    thru = fdf[COL_THRUPLAYS].sum() if COL_THRUPLAYS in fdf.columns else 0
-    completion = (thru / video_views * 100) if video_views else None
+    ) if eng_cols else pd.DataFrame()
+    top_eng = eng_per_camp.iloc[0] if not eng_per_camp.empty else None
+    dominant = max(totals, key=totals.get) if totals else None
+    v3 = col_sum(fdf, COL_3SEC_VIEWS)
+    thru = col_sum(fdf, COL_THRUPLAYS)
+    completion = (thru / v3 * 100) if v3 else None
     render_summary(
         "Engagement — key takeaways",
         [
             f"Total engagement actions: <b>{fmt_int(total_eng)}</b>.",
-            f"Most engaging campaign: <b>{top_eng_camp[COL_CAMPAIGN]}</b> with <b>{fmt_int(top_eng_camp['_t'])}</b> total interactions." if top_eng_camp is not None else "",
-            f"Dominant interaction type: <b>{dominant_metric}</b> ({fmt_int(totals[dominant_metric])})." if dominant_metric else "",
-            f"Video: <b>{fmt_int(video_views)}</b> 3-sec views · <b>{fmt_int(thru)}</b> ThruPlays" + (f" → completion ≈ <b>{completion:.1f}%</b>." if completion else "."),
+            f"Most engaging campaign: <b>{top_eng[COL_CAMPAIGN]}</b> ({fmt_int(top_eng['_t'])} interactions)." if top_eng is not None else "",
+            f"Dominant interaction type: <b>{dominant}</b> ({fmt_int(totals[dominant])})." if dominant else "",
+            f"Video: <b>{fmt_int(v3)}</b> 3-sec views · <b>{fmt_int(thru)}</b> ThruPlays" + (f" → completion ≈ <b>{completion:.1f}%</b>." if completion else "."),
         ],
         icon="❤️",
     )
 
-# ---- Tab 4: Audience & Funnel ----
-with tab4:
-    col_a, col_b = st.columns(2)
-    with col_a:
-        age_perf = fdf.groupby(COL_AGE, as_index=False).agg(
-            Impressions=(COL_IMPRESSIONS, "sum"),
-            Clicks=(COL_CLICKS, "sum"),
-            CTR=(COL_CTR, "mean"),
-            CPC=(COL_CPC_ALL, "mean"),
-        )
-        fig = px.bar(age_perf, x=COL_AGE, y="Clicks", color="CTR",
-                     title="Clicks per age group (color = avg CTR)",
-                     color_continuous_scale="Viridis")
-        st.plotly_chart(fig, use_container_width=True)
-    with col_b:
-        funnel_vals = {
-            "Content views": fdf[COL_CONTENT_VIEWS].sum(),
-            "Link clicks": fdf[COL_LINK_CLICKS].sum(),
-            "Add to cart": fdf[COL_ADD_CART].sum(),
-            "Checkout": fdf[COL_CHECKOUT].sum(),
-            "Payment info": fdf[COL_PAY_INFO].sum(),
-            "Purchases": fdf[COL_PURCHASES].sum(),
+# ---------------------------------------------------------------------------
+# Tab — Core Targets (ad sets)
+# ---------------------------------------------------------------------------
+with tab_targets:
+    st.markdown("### 🧭 Core targets — performance by ad set")
+    st.caption(
+        "Each ad set in `Nom de l'ensemble de publicités` is a targeting bundle. "
+        "Compare what each one delivers in impressions, engagement and clicks."
+    )
+
+    if COL_ADSET not in fdf.columns or fdf[COL_ADSET].dropna().empty:
+        st.info("No ad-set data available in the current selection.")
+    else:
+        agg_spec = {
+            "Spend":        (COL_SPEND, "sum"),
+            "Impressions":  (COL_IMPRESSIONS, "sum"),
+            "Reach":        (COL_REACH, "sum"),
+            "Clicks":       (COL_CLICKS, "sum"),
+            "Link clicks":  (COL_LINK_CLICKS, "sum"),
+            "Page likes":   (COL_LIKES, "sum"),
+            "Reactions":    (COL_REACTIONS, "sum"),
+            "Comments":     (COL_COMMENTS, "sum"),
+            "Shares":       (COL_SHARES, "sum"),
+            "Engagements":  (COL_POST_ENG, "sum"),
+            "Avg CTR":      (COL_CTR, "mean"),
+            "Avg CPC":      (COL_CPC_ALL, "mean"),
         }
-        funnel_vals = {k: v for k, v in funnel_vals.items() if pd.notna(v) and v > 0}
+        # Filter spec to only columns that actually exist (and avoid the size-fallback if undesired)
+        safe_spec = {}
+        for k, (src, fn) in agg_spec.items():
+            if src in fdf.columns:
+                safe_spec[k] = (src, fn)
+        adset_df = (
+            fdf.dropna(subset=[COL_ADSET])
+            .groupby(COL_ADSET, as_index=False)
+            .agg(**safe_spec)
+            .sort_values("Spend", ascending=False)
+        )
+
+        # KPI strip
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Ad sets", f"{len(adset_df)}")
+        k2.metric("Total impressions", fmt_int(adset_df["Impressions"].sum()) if "Impressions" in adset_df else "—")
+        k3.metric("Total clicks", fmt_int(adset_df["Clicks"].sum()) if "Clicks" in adset_df else "—")
+        k4.metric("Total spend", fmt_money(adset_df["Spend"].sum()) if "Spend" in adset_df else "—")
+
+        st.divider()
+
+        # Chart picker
+        chart_metrics = [c for c in
+                         ["Impressions", "Reach", "Clicks", "Link clicks",
+                          "Page likes", "Reactions", "Comments", "Shares",
+                          "Engagements", "Spend"]
+                         if c in adset_df.columns]
+        c1, c2 = st.columns([1, 3])
+        with c1:
+            pick = st.selectbox("Metric", chart_metrics, key="adset_metric")
+            top_n = st.slider("Show top N ad sets", 3, max(3, len(adset_df)),
+                              min(10, len(adset_df)), key="adset_topn")
+        with c2:
+            plot_df = adset_df.sort_values(pick, ascending=False).head(top_n)
+            fig = px.bar(
+                plot_df, x=COL_ADSET, y=pick,
+                color=pick, color_continuous_scale="Purples",
+                text_auto=".2s",
+                title=f"{pick} by ad set (top {top_n})",
+            )
+            fig.update_layout(xaxis_tickangle=-30, height=420, coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Multi-metric comparison
+        st.markdown("#### Multi-metric comparison")
+        comp_metrics = st.multiselect(
+            "Pick metrics to compare side-by-side",
+            chart_metrics,
+            default=[m for m in ["Impressions", "Clicks", "Engagements"] if m in chart_metrics],
+            key="adset_multi",
+        )
+        if comp_metrics:
+            long_df = adset_df.melt(
+                id_vars=[COL_ADSET], value_vars=comp_metrics,
+                var_name="Metric", value_name="Value",
+            )
+            fig = px.bar(
+                long_df, x=COL_ADSET, y="Value", color="Metric",
+                barmode="group", title="Ad-set comparison",
+            )
+            fig.update_layout(xaxis_tickangle=-30, height=440)
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("#### Ad-set table")
+        show = adset_df.copy()
+        if "Spend" in show:    show["Spend"]   = show["Spend"].map(fmt_money)
+        if "Avg CPC" in show:  show["Avg CPC"] = show["Avg CPC"].map(fmt_money)
+        if "Avg CTR" in show:  show["Avg CTR"] = show["Avg CTR"].map(lambda v: f"{v:.3f}%" if pd.notna(v) else "—")
+        for c in ["Impressions", "Reach", "Clicks", "Link clicks",
+                  "Page likes", "Reactions", "Comments", "Shares", "Engagements"]:
+            if c in show:
+                show[c] = show[c].map(fmt_int)
+        st.dataframe(show, use_container_width=True, hide_index=True)
+
+        # Insight summary
+        if not adset_df.empty:
+            top_imp_row = adset_df.sort_values("Impressions", ascending=False).iloc[0] if "Impressions" in adset_df else None
+            top_clk_row = adset_df.sort_values("Clicks", ascending=False).iloc[0] if "Clicks" in adset_df else None
+            top_eng_row = adset_df.sort_values("Engagements", ascending=False).iloc[0] if "Engagements" in adset_df else None
+            bullets = []
+            if top_imp_row is not None:
+                bullets.append(f"Biggest reach driver: <b>{top_imp_row[COL_ADSET]}</b> with <b>{fmt_int(top_imp_row['Impressions'])}</b> impressions.")
+            if top_clk_row is not None:
+                bullets.append(f"Most clicks: <b>{top_clk_row[COL_ADSET]}</b> with <b>{fmt_int(top_clk_row['Clicks'])}</b> clicks.")
+            if top_eng_row is not None and top_eng_row["Engagements"] > 0:
+                bullets.append(f"Most engaged audience: <b>{top_eng_row[COL_ADSET]}</b> with <b>{fmt_int(top_eng_row['Engagements'])}</b> engagements.")
+            render_summary("Core targets insights", bullets, icon="🧭")
+
+# ---------------------------------------------------------------------------
+# Tab 4 — Funnel & Conversions
+# ---------------------------------------------------------------------------
+with tab4:
+    funnel_map = {
+        "Content views":   COL_CONTENT_VIEWS,
+        "Landing views":   COL_LANDING_VIEWS,
+        "Link clicks":     COL_LINK_CLICKS,
+        "Add to cart":     COL_ADD_CART,
+        "Checkout":        COL_CHECKOUT,
+        "Payment info":    COL_PAY_INFO,
+        "Purchases":       COL_PURCHASES,
+    }
+    funnel_vals = {
+        label: col_sum(fdf, col)
+        for label, col in funnel_map.items()
+        if col in fdf.columns
+    }
+    funnel_vals = {k: v for k, v in funnel_vals.items() if pd.notna(v) and v > 0}
+
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
         if funnel_vals:
             fig = go.Figure(go.Funnel(
                 y=list(funnel_vals.keys()),
                 x=list(funnel_vals.values()),
                 textinfo="value+percent initial",
+                marker={"color": "#a855f7"},
             ))
-            fig.update_layout(title="Conversion funnel", height=420)
+            fig.update_layout(title="Global conversion funnel", height=480)
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No conversion events in current selection.")
+    with col_b:
+        st.subheader("Conversion KPIs")
+        link_clicks = col_sum(fdf, COL_LINK_CLICKS)
+        purchases = col_sum(fdf, COL_PURCHASES)
+        conv_rate = (purchases / link_clicks * 100) if link_clicks else None
+        st.metric("Total purchases", fmt_int(purchases))
+        st.metric("Total leads", fmt_int(col_sum(fdf, COL_LEADS)))
+        st.metric("Messages started", fmt_int(col_sum(fdf, COL_MSG)))
+        st.metric("Conversion rate (purchases / link clicks)",
+                  f"{conv_rate:.2f}%" if conv_rate else "—")
+        roas = fdf[COL_ROAS].dropna() if COL_ROAS in fdf.columns else pd.Series(dtype=float)
+        st.metric("Avg ROAS", f"{roas.mean():.2f}" if not roas.empty else "—")
+        cart_value = col_sum(fdf, COL_CART_VALUE)
+        st.metric("Cart conversion value", fmt_money(cart_value) if cart_value else "—")
 
-    # ROAS / leads / messages summary
-    col_c, col_d, col_e = st.columns(3)
-    col_c.metric("Total Leads", fmt_int(fdf[COL_LEADS].sum()))
-    col_d.metric("Messages started", fmt_int(fdf[COL_MSG].sum()))
-    roas = fdf[COL_ROAS].dropna()
-    col_e.metric("Avg ROAS", f"{roas.mean():.2f}" if not roas.empty else "—")
+    st.divider()
 
-    # Summary takeaways
-    age_perf_sum = fdf.groupby(COL_AGE, as_index=False).agg(
-        Clicks=(COL_CLICKS, "sum"), CTR=(COL_CTR, "mean"),
-    ).dropna()
-    best_clicks_age = age_perf_sum.sort_values("Clicks", ascending=False).iloc[0] if not age_perf_sum.empty else None
-    best_ctr_age = age_perf_sum.sort_values("CTR", ascending=False).iloc[0] if not age_perf_sum.empty else None
-    purchases = fdf[COL_PURCHASES].sum() if COL_PURCHASES in fdf.columns else 0
-    link_clicks = fdf[COL_LINK_CLICKS].sum() if COL_LINK_CLICKS in fdf.columns else 0
+    # Per ad-set funnel summary table
+    if COL_ADSET in fdf.columns:
+        agg_cols = {label: (col, "sum") for label, col in funnel_map.items() if col in fdf.columns}
+        if agg_cols:
+            per_adset = (
+                fdf.groupby(COL_ADSET, as_index=False)
+                .agg(**{k: v for k, v in agg_cols.items()})
+                .sort_values(list(agg_cols.keys())[0], ascending=False)
+            )
+            fig = px.bar(
+                per_adset.melt(id_vars=COL_ADSET, var_name="Step", value_name="Count"),
+                x=COL_ADSET, y="Count", color="Step", barmode="group",
+                title="Funnel steps by ad set",
+            )
+            fig.update_layout(xaxis_tickangle=-30, height=480)
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Cost-per-conversion summary
+    cp_map = {
+        "Cost / result":      COL_CPR,
+        "Cost / content view": COL_CP_CONTENT,
+        "Cost / landing view": COL_CP_LANDING,
+        "Cost / cart add":    COL_CP_CART,
+        "Cost / checkout":    COL_CP_CHECKOUT,
+        "Cost / payment info": COL_CP_PAY,
+        "Cost / purchase":    COL_CP_PURCHASE,
+        "Cost / lead":        COL_CP_LEAD,
+    }
+    cp_rows = []
+    for label, c in cp_map.items():
+        if c in fdf.columns:
+            v = fdf[c].dropna()
+            if not v.empty:
+                cp_rows.append({"Metric": label, "Avg cost (€)": v.mean()})
+    if cp_rows:
+        cp_df = pd.DataFrame(cp_rows).sort_values("Avg cost (€)")
+        fig = px.bar(
+            cp_df, x="Metric", y="Avg cost (€)",
+            title="Average cost per funnel action (€)",
+            text_auto=".2f", color="Avg cost (€)",
+            color_continuous_scale="Reds",
+        )
+        fig.update_layout(xaxis_tickangle=-20, height=420, coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Summary
+    purchases = col_sum(fdf, COL_PURCHASES)
+    link_clicks = col_sum(fdf, COL_LINK_CLICKS)
     conv_rate = (purchases / link_clicks * 100) if link_clicks else None
-    leads_total = fdf[COL_LEADS].sum() if COL_LEADS in fdf.columns else 0
-    roas_avg = fdf[COL_ROAS].dropna().mean() if COL_ROAS in fdf.columns else None
+    leads_total = col_sum(fdf, COL_LEADS)
+    roas_avg = col_mean(fdf, COL_ROAS)
+    cp_purchase = col_mean(fdf, COL_CP_PURCHASE)
+    cp_lead = col_mean(fdf, COL_CP_LEAD)
     render_summary(
-        "Audience & Funnel — key takeaways",
+        "Funnel & Conversions — key takeaways",
         [
-            f"Most clicks come from age group <b>{best_clicks_age[COL_AGE]}</b> (<b>{fmt_int(best_clicks_age['Clicks'])}</b> clicks)." if best_clicks_age is not None else "",
-            f"Highest avg CTR age group: <b>{best_ctr_age[COL_AGE]}</b> at <b>{fmt_pct(best_ctr_age['CTR'])}</b>." if best_ctr_age is not None else "",
             f"Funnel: <b>{fmt_int(link_clicks)}</b> link clicks → <b>{fmt_int(purchases)}</b> purchases" + (f" (conv. <b>{conv_rate:.2f}%</b>)." if conv_rate else "."),
             f"Total leads collected: <b>{fmt_int(leads_total)}</b>." if leads_total else "",
-            f"Avg ROAS: <b>{roas_avg:.2f}</b>." if roas_avg and pd.notna(roas_avg) else "",
+            f"Avg ROAS: <b>{roas_avg:.2f}</b>." if roas_avg else "",
+            f"Avg cost per purchase: <b>{fmt_money(cp_purchase)}</b>." if cp_purchase else "",
+            f"Avg cost per lead: <b>{fmt_money(cp_lead)}</b>." if cp_lead else "",
         ],
         icon="🎯",
     )
 
-# ---- Tab Platform: Facebook vs Instagram comparison ----
-with tab_plat:
-    if pdf is None or pdf.empty:
-        st.warning(
-            "Platform-level dataset not found. Place `mg_batam_plateform.csv` next "
-            "to `dashboard.py`."
-        )
-    else:
-        st.caption(
-            "Comparison of all KPIs and their costs **by platform** "
-            "(Facebook vs Instagram). Use the **🔀 Platform view filters** "
-            "section in the sidebar to narrow campaigns."
-        )
-
-        ppdf = pdf[pdf[COL_CAMPAIGN].isin(sel_pcamp)].copy()
-
-        if ppdf.empty:
-            st.info("No campaigns selected.")
-            st.stop()
-
-        # ---- Top KPI cards per platform ----
-        st.subheader("KPIs per platform")
-
-        plat_options = ["All"] + sorted(ppdf[COL_PLATFORM].dropna().unique().tolist())
-        plat_view = st.radio(
-            "View", plat_options, horizontal=True, key="plat_kpi_view",
-        )
-
-        agg = ppdf.groupby(COL_PLATFORM, as_index=False).agg(
-            Impressions=(COL_IMPRESSIONS, "sum"),
-            Reach=(COL_REACH, "sum"),
-            Clicks=(COL_CLICKS, "sum"),
-            Spend=("Spend (est.)", "sum"),
-            Purchases=(COL_PURCHASES, "sum"),
-            CTR=(COL_CTR, "mean"),
-            CPC=(COL_CPC_ALL, "mean"),
-            CPM=(COL_CPM, "mean"),
-            Frequency=(COL_FREQ, "mean"),
-        )
-
-        if plat_view == "All":
-            # Aggregated across both platforms
-            sub = ppdf
-            row = {
-                "Impressions": sub[COL_IMPRESSIONS].sum(),
-                "Reach": sub[COL_REACH].sum(),
-                "Clicks": sub[COL_CLICKS].sum(),
-                "Spend": sub["Spend (est.)"].sum(),
-                "Purchases": sub[COL_PURCHASES].sum(),
-                "CTR": sub[COL_CTR].mean(),
-                "CPC": sub[COL_CPC_ALL].mean(),
-                "CPM": sub[COL_CPM].mean(),
-                "Frequency": sub[COL_FREQ].mean(),
-            }
-            label = "All platforms"
-        else:
-            row = agg[agg[COL_PLATFORM] == plat_view].iloc[0].to_dict()
-            label = plat_view
-
-        st.markdown(f"#### {label}")
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Impressions", fmt_int(row["Impressions"]))
-        k2.metric("Reach", fmt_int(row["Reach"]))
-        k3.metric("Clicks", fmt_int(row["Clicks"]))
-        k4.metric("Spend (est.)", fmt_money(row["Spend"]))
-        k5.metric("Purchases", fmt_int(row["Purchases"]))
-
-        k6, k7, k8, k9 = st.columns(4)
-        k6.metric("Avg CTR", fmt_pct(row["CTR"]))
-        k7.metric("Avg CPC", fmt_money(row["CPC"]))
-        k8.metric("Avg CPM", fmt_money(row["CPM"]))
-        k9.metric("Avg frequency", f"{row['Frequency']:.2f}" if pd.notna(row["Frequency"]) else "—")
-
-        st.divider()
-
-        # ---- Volume KPI bar chart ----
-        vol_long = agg.melt(
-            id_vars=COL_PLATFORM,
-            value_vars=["Impressions", "Reach", "Clicks", "Purchases"],
-            var_name="KPI", value_name="value",
-        )
-        fig = px.bar(
-            vol_long, x="KPI", y="value", color=COL_PLATFORM,
-            barmode="group", text_auto=".2s",
-            title="Volume KPIs — Facebook vs Instagram",
-            color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
-        )
-        fig.update_layout(height=420)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # ---- Cost / efficiency comparison ----
-        col_a, col_b = st.columns(2)
-        with col_a:
-            cost_long = agg.melt(
-                id_vars=COL_PLATFORM,
-                value_vars=["CTR", "CPC", "CPM", "Frequency"],
-                var_name="Metric", value_name="value",
-            )
-            fig = px.bar(
-                cost_long, x="Metric", y="value", color=COL_PLATFORM,
-                barmode="group", text_auto=".3f",
-                title="Avg cost & efficiency metrics",
-                color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
-            )
-            fig.update_layout(height=420)
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            spend_share = agg[[COL_PLATFORM, "Spend"]].copy()
-            fig = px.pie(
-                spend_share, names=COL_PLATFORM, values="Spend", hole=0.4,
-                title="Estimated spend share",
-                color=COL_PLATFORM,
-                color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
-            )
-            fig.update_layout(height=420)
-            st.plotly_chart(fig, use_container_width=True)
-
-        # ---- Engagement comparison ----
-        eng_cols = [COL_LIKES, COL_REACTIONS, COL_COMMENTS, COL_SHARES,
-                    COL_POST_ENG]
-        eng = ppdf.groupby(COL_PLATFORM, as_index=False)[eng_cols].sum()
-        eng_long = eng.melt(id_vars=COL_PLATFORM, var_name="Metric",
-                            value_name="value")
-        fig = px.bar(
-            eng_long, x="Metric", y="value", color=COL_PLATFORM,
-            barmode="group", text_auto=".2s",
-            title="Engagement metrics by platform",
-            color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
-        )
-        fig.update_layout(height=420, xaxis_tickangle=-20)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # ---- Conversion funnel side-by-side ----
-        funnel_metrics = {
-            "Content views": COL_CONTENT_VIEWS,
-            "Link clicks": COL_LINK_CLICKS,
-            "Add to cart": COL_ADD_CART,
-            "Checkout": COL_CHECKOUT,
-            "Payment info": COL_PAY_INFO,
-            "Purchases": COL_PURCHASES,
-        }
-        platforms = sorted(ppdf[COL_PLATFORM].dropna().unique().tolist())
-        funnel_cols = st.columns(len(platforms))
-        for col, plat in zip(funnel_cols, platforms):
-            sub = ppdf[ppdf[COL_PLATFORM] == plat]
-            vals = {label: sub[c].sum() for label, c in funnel_metrics.items()}
-            vals = {k: v for k, v in vals.items() if pd.notna(v) and v > 0}
-            with col:
-                if vals:
-                    color = "#1877F2" if plat == "Facebook" else "#E4405F"
-                    fig = go.Figure(go.Funnel(
-                        y=list(vals.keys()), x=list(vals.values()),
-                        textinfo="value+percent initial",
-                        marker={"color": color},
-                    ))
-                    fig.update_layout(title=f"{plat} funnel", height=380)
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info(f"No conversion events for {plat}.")
-
-        # ---- Per-campaign platform comparison ----
-        st.subheader("Per-campaign comparison")
-        kpi_choice = st.selectbox(
-            "Metric to compare per campaign",
-            ["Impressions", "Reach", "Clicks", "Spend (est.)", "Purchases",
-             COL_CTR, COL_CPC_ALL, COL_CPM],
-            index=0,
-        )
-        agg_func = "mean" if kpi_choice in (COL_CTR, COL_CPC_ALL, COL_CPM) else "sum"
-        col_map = {
-            "Impressions": COL_IMPRESSIONS, "Reach": COL_REACH,
-            "Clicks": COL_CLICKS, "Spend (est.)": "Spend (est.)",
-            "Purchases": COL_PURCHASES,
-        }
-        col_to_use = col_map.get(kpi_choice, kpi_choice)
-        per_camp = (
-            ppdf.groupby([COL_CAMPAIGN, COL_PLATFORM], as_index=False)[col_to_use]
-            .agg(agg_func)
-        )
-        fig = px.bar(
-            per_camp, x=COL_CAMPAIGN, y=col_to_use, color=COL_PLATFORM,
-            barmode="group", title=f"{kpi_choice} by campaign & platform",
-            color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
-        )
-        fig.update_layout(xaxis_tickangle=-40, height=560)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # ---- Trend by month if available ----
-        if COL_MONTH in ppdf.columns and COL_YEAR in ppdf.columns:
-            month_order = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-                           "Juillet", "Août", "Septembre", "Octobre",
-                           "Novembre", "Décembre"]
-            tdf = ppdf.dropna(subset=[COL_MONTH, COL_YEAR]).copy()
-            if not tdf.empty:
-                tdf["Période"] = (
-                    tdf[COL_MONTH].astype(str) + " " + tdf[COL_YEAR].astype(int).astype(str)
-                )
-                trend = tdf.groupby(["Période", COL_MONTH, COL_YEAR, COL_PLATFORM],
-                                    as_index=False)[
-                    [COL_IMPRESSIONS, COL_CLICKS, "Spend (est.)"]
-                ].sum()
-                trend["_m"] = trend[COL_MONTH].apply(
-                    lambda m: month_order.index(m) if m in month_order else 99
-                )
-                trend = trend.sort_values([COL_YEAR, "_m"])
-                fig = px.line(
-                    trend, x="Période", y="Spend (est.)", color=COL_PLATFORM,
-                    markers=True, title="Spend trend by month & platform",
-                    color_discrete_map={"Facebook": "#1877F2", "Instagram": "#E4405F"},
-                )
-                fig.update_layout(height=420)
-                st.plotly_chart(fig, use_container_width=True)
-
-        with st.expander("📋 Platform raw data"):
-            st.dataframe(ppdf, use_container_width=True, height=400)
-
-        # ---- Summary takeaways ----
-        plat_agg = ppdf.groupby(COL_PLATFORM, as_index=False).agg(
-            Imp=(COL_IMPRESSIONS, "sum"), Spend=("Spend (est.)", "sum"),
-            Clicks=(COL_CLICKS, "sum"), CTR=(COL_CTR, "mean"),
-            CPC=(COL_CPC_ALL, "mean"), Purchases=(COL_PURCHASES, "sum"),
-        )
-        total_spend_p = ppdf["Spend (est.)"].sum()
-        leader_imp = plat_agg.sort_values("Imp", ascending=False).iloc[0] if not plat_agg.empty else None
-        leader_ctr = plat_agg.sort_values("CTR", ascending=False).iloc[0] if not plat_agg.empty else None
-        cheapest_plat = plat_agg[plat_agg["CPC"] > 0].sort_values("CPC").iloc[0] if not plat_agg[plat_agg["CPC"] > 0].empty else None
-        spend_breakdown = " · ".join(
-            f"<b>{r[COL_PLATFORM]}</b> {fmt_money(r['Spend'])} ({r['Spend']/total_spend_p*100:.0f}%)"
-            for _, r in plat_agg.iterrows()
-        ) if total_spend_p else ""
-        render_summary(
-            "Facebook vs Instagram — key takeaways",
-            [
-                f"Spend split: {spend_breakdown}." if spend_breakdown else "",
-                f"Reach leader: <b>{leader_imp[COL_PLATFORM]}</b> with <b>{fmt_int(leader_imp['Imp'])}</b> impressions." if leader_imp is not None else "",
-                f"Best avg CTR: <b>{leader_ctr[COL_PLATFORM]}</b> at <b>{fmt_pct(leader_ctr['CTR'])}</b>." if leader_ctr is not None else "",
-                f"Lowest avg CPC: <b>{cheapest_plat[COL_PLATFORM]}</b> at <b>{fmt_money(cheapest_plat['CPC'])}</b>." if cheapest_plat is not None else "",
-            ],
-            icon="🌐",
-        )
-
-# ---- Tab 5: Raw Data ----
+# ---------------------------------------------------------------------------
+# Tab 5 — Raw Data
+# ---------------------------------------------------------------------------
 with tab5:
     st.dataframe(fdf, use_container_width=True, height=600)
     csv = fdf.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download filtered data (CSV)", csv,
-                       file_name="batam_filtered.csv", mime="text/csv")
+    st.download_button(
+        "⬇️ Download filtered data (CSV)", csv,
+        file_name="biocyte_filtered.csv", mime="text/csv",
+    )
