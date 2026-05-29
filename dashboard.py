@@ -647,6 +647,7 @@ with tab_over:
     total_imp = col_sum(fdf, COL_IMPRESSIONS)
     total_reach = col_sum(fdf, COL_REACH)
     total_clicks = col_sum(fdf, COL_CLICKS)
+    total_results = col_sum(fdf, COL_RESULT)
     total_purchases = col_sum(fdf, COL_PURCHASES)
     total_leads = col_sum(fdf, COL_LEADS)
     avg_ctr = col_mean(fdf, COL_CTR)
@@ -654,18 +655,20 @@ with tab_over:
     avg_cpm = col_mean(fdf, COL_CPM)
     avg_freq = (total_imp / total_reach) if total_reach else None
     avg_roas = col_mean(fdf, COL_ROAS)
+    avg_cpl = (total_spend / total_leads) if total_leads else None
+    avg_cost_per_purchase = (total_spend / total_purchases) if total_purchases else None
 
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Total Spend", fmt_money(total_spend))
     k2.metric("Impressions", fmt_int(total_imp))
     k3.metric("Reach", fmt_int(total_reach))
-    k4.metric("Clicks", fmt_int(total_clicks))
+    k4.metric("Total results", fmt_int(total_results))
     k5.metric("Purchases", fmt_int(total_purchases))
 
     k6, k7, k8, k9, k10 = st.columns(5)
     k6.metric("Avg CTR", fmt_pct(avg_ctr))
-    k7.metric("Avg CPC", fmt_money(avg_cpc))
-    k8.metric("Avg CPM", fmt_money(avg_cpm))
+    k7.metric("Avg CPL (cost per prospect)", fmt_money(avg_cpl) if avg_cpl else "—")
+    k8.metric("Avg cost per purchase", fmt_money(avg_cost_per_purchase) if avg_cost_per_purchase else "—")
     k9.metric("Avg Frequency", f"{avg_freq:.2f}" if avg_freq else "—")
     k10.metric("Avg ROAS", f"{avg_roas:.2f}" if avg_roas else "—")
 
@@ -875,18 +878,18 @@ with tab1:
                 st.session_state["xf_adsets"] = picks
                 st.rerun()
 
-    # Top ads by impressions
-    if COL_AD in fdf.columns:
+    # Top ads by results
+    if COL_AD in fdf.columns and COL_RESULT in fdf.columns:
         by_ad = (
-            fdf.groupby(COL_AD, as_index=False)[[COL_IMPRESSIONS, COL_REACH, COL_FREQ]]
-            .agg({COL_IMPRESSIONS: "sum", COL_REACH: "sum", COL_FREQ: "mean"})
-            .sort_values(COL_IMPRESSIONS, ascending=False)
+            fdf.groupby(COL_AD, as_index=False)[[COL_RESULT, COL_REACH, COL_FREQ]]
+            .agg({COL_RESULT: "sum", COL_REACH: "sum", COL_FREQ: "mean"})
+            .sort_values(COL_RESULT, ascending=False)
             .head(15)
         )
         fig = px.bar(
-            by_ad, x=COL_AD, y=COL_IMPRESSIONS,
+            by_ad, x=COL_AD, y=COL_RESULT,
             color=COL_FREQ, color_continuous_scale="Plasma",
-            title="Top ads by impressions (color = avg frequency)",
+            title="Top ads by results (color = avg frequency)",
             text_auto=".2s",
         )
         fig.update_layout(xaxis_tickangle=-30, height=460)
