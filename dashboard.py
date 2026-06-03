@@ -44,7 +44,7 @@ pio.templates.default = "batam"
 _PAGE_ICON_PATH = Path(__file__).parent / "3sg_logo.png"
 
 st.set_page_config(
-    page_title="Biocyte Meta Ads Dashboard",
+    page_title="Biocyte Meta & Google Ads Dashboard",
     page_icon=str(_PAGE_ICON_PATH) if _PAGE_ICON_PATH.exists() else "📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -499,12 +499,12 @@ def _img_b64(path_str: str) -> str:
     return base64.b64encode(Path(path_str).read_bytes()).decode()
 
 
-_logo_path = Path(__file__).parent / "ykone_logo.jpg"
+_logo_path = Path(__file__).parent / "logo-biocyte.webp"
 if _logo_path.exists():
     st.markdown(
         f"""
         <div style="display:flex; align-items:center; gap:22px; margin: 6px 0 14px 0;">
-            <img src="data:image/jpeg;base64,{_img_b64(str(_logo_path))}"
+            <img src="data:image/webp;base64,{_img_b64(str(_logo_path))}"
                  style="height:78px; width:78px; object-fit:cover;
                         border-radius:18px; background:#000; padding:4px;
                         box-shadow:
@@ -515,7 +515,7 @@ if _logo_path.exists():
                         animation: ykoneGlow 3.2s ease-in-out infinite;" />
             <div>
                 <h1 style="margin:0; padding:0; font-size:2.1rem;">
-                    Biocyte — Meta Ads Performance Dashboard
+                    Biocyte Meta &amp; Google Ads Dashboard
                 </h1>
             </div>
         </div>
@@ -1340,3 +1340,5 @@ with tab5:
         "⬇️ Download filtered data (CSV)", csv,
         file_name="biocyte_filtered.csv", mime="text/csv",
     )
+
+
