@@ -663,11 +663,23 @@ with tab_over:
     k2.metric("Impressions", fmt_int(total_imp))
     k3.metric("Reach", fmt_int(total_reach))
     _obj_labels = (
-        fdf[COL_OBJECTIVE].dropna().unique().tolist()
+        sorted(fdf[COL_OBJECTIVE].dropna().unique().tolist())
         if COL_OBJECTIVE in fdf.columns else []
     )
-    _obj_label_str = _obj_labels[0] if len(_obj_labels) == 1 else (", ".join(_obj_labels) if _obj_labels else None)
-    k4.metric("Total results", fmt_int(total_results), delta=_obj_label_str, delta_color="off")
+    with k4:
+        _sel_obj_result = st.selectbox(
+            "Total results by",
+            options=["All"] + _obj_labels,
+            key="overview_result_obj",
+            label_visibility="visible",
+        )
+        if _sel_obj_result == "All" or not _obj_labels:
+            _result_count = total_results
+        else:
+            _result_count = col_sum(
+                fdf[fdf[COL_OBJECTIVE] == _sel_obj_result], COL_RESULT
+            )
+        st.metric("Total results", fmt_int(_result_count))
     k5.metric("Purchases", fmt_int(total_purchases))
 
     k6, k7, k8, k9, k10 = st.columns(5)
