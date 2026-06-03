@@ -538,11 +538,9 @@ else:
     st.sidebar.caption("🔴 Supabase not configured — uploads won't persist.")
 
 # ── Admin login (gates uploads & deletes) ─────────────────────────────────
-try:
-    _ADMIN_USER = st.secrets.get("admin_user", "omd_admin2024")
-    _ADMIN_PASS = st.secrets.get("admin_pass", "loginomd2024@@")
-except Exception:
-    _ADMIN_USER, _ADMIN_PASS = "omd_admin2024", "loginomd2024@@"
+# Hard-coded so they're the same for everyone on every deployment.
+_ADMIN_USER = "omd_admin2024"
+_ADMIN_PASS = "loginomd2024@@"
 
 if "is_admin" not in st.session_state:
     st.session_state["is_admin"] = False
@@ -557,7 +555,7 @@ with st.sidebar.expander("🔐 Admin login", expanded=not st.session_state["is_a
         _u = st.text_input("Login", key="admin_user_input")
         _p = st.text_input("Password", type="password", key="admin_pass_input")
         if st.button("Log in", key="admin_login_btn", use_container_width=True):
-            if _u == _ADMIN_USER and _p == _ADMIN_PASS:
+            if (_u or "").strip() == _ADMIN_USER and (_p or "").strip() == _ADMIN_PASS:
                 st.session_state["is_admin"] = True
                 st.rerun()
             else:
