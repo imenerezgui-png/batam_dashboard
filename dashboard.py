@@ -136,6 +136,17 @@ st.markdown(
         margin-top: 4px;
     }
 
+    /* ===== Total-results inline selectbox ===== */
+    div[data-testid="stSelectbox"]:has(div[data-baseweb="select"]) div[data-baseweb="select"] > div {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        font-size: 0.68rem !important;
+        color: #94a3b8 !important;
+        padding: 0 !important;
+        min-height: unset !important;
+    }
+
     /* ===== Tabs ===== */
     div[data-baseweb="tab-list"] {
         gap: 6px;
@@ -667,21 +678,20 @@ with tab_over:
         if COL_OBJECTIVE in fdf.columns else []
     )
     with k4:
-        with st.container(border=True):
-            st.caption("Total results")
-            _sel_obj_result = st.selectbox(
-                "Filter by",
-                options=["All"] + _obj_labels,
-                key="overview_result_obj",
-                label_visibility="collapsed",
+        _sel_obj_result = st.session_state.get("overview_result_obj", "All")
+        if _sel_obj_result == "All" or not _obj_labels:
+            _result_count = total_results
+        else:
+            _result_count = col_sum(
+                fdf[fdf[COL_OBJECTIVE] == _sel_obj_result], COL_RESULT
             )
-            if _sel_obj_result == "All" or not _obj_labels:
-                _result_count = total_results
-            else:
-                _result_count = col_sum(
-                    fdf[fdf[COL_OBJECTIVE] == _sel_obj_result], COL_RESULT
-                )
-            st.markdown(f"<p style='font-size:2rem; font-weight:700; margin:4px 0 0 0;'>{fmt_int(_result_count)}</p>", unsafe_allow_html=True)
+        st.metric("Total results", fmt_int(_result_count))
+        st.selectbox(
+            "Filter by objective",
+            options=["All"] + _obj_labels,
+            key="overview_result_obj",
+            label_visibility="collapsed",
+        )
     k5.metric("Purchases", fmt_int(total_purchases))
 
     k6, k7, k8, k9, k10 = st.columns(5)
