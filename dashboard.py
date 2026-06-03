@@ -387,9 +387,20 @@ def load_uploaded(file) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 st.sidebar.title("⚙️ Controls")
 
+st.sidebar.markdown("**📘 Meta Ads**")
 uploaded = st.sidebar.file_uploader(
-    "Upload Meta Ads export (.xlsx)", type=["xlsx"]
+    "Upload Meta Ads export (.xlsx)", type=["xlsx"], key="meta_upload"
 )
+
+st.sidebar.markdown("**🔍 Google Ads**")
+uploaded_google = st.sidebar.file_uploader(
+    "Upload Google Ads export (.csv)", type=["csv"], key="google_upload"
+)
+# Persist the uploaded Google Ads file so the Google Ads tab can pick it up
+if uploaded_google is not None:
+    st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
+    st.session_state["google_ads_upload_name"]  = uploaded_google.name
+
 if uploaded is not None:
     df = load_uploaded(uploaded)
 elif DATA_FILE.exists():
@@ -1390,6 +1401,8 @@ with tab_google:
     st.caption("Source: `Biocyte Google Ads Performance.csv` (Google Ads export, UTF-16 / tab-separated).")
 
     _google_path = Path(__file__).parent / "Biocyte Google Ads Performance.csv"
+    _uploaded_bytes = st.session_state.get("google_ads_upload_bytes")
+    _uploaded_name  = st.session_state.get("google_ads_upload_name")
 
     @st.cache_data(show_spinner=False)
     def _load_google_ads(path_str: str) -> pd.DataFrame:
@@ -1400,6 +1413,23 @@ with tab_google:
             for enc in encodings:
                 try:
                     g = pd.read_csv(path_str, encoding=enc, sep="\t", skiprows=skip)
+                    if g.shape[1] >= 5:
+                        return g
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+        if last_err:
+            raise last_err
+        return pd.DataFrame()
+
+    @st.cache_data(show_spinner=False)
+    def _load_google_ads_bytes(blob: bytes) -> pd.DataFrame:
+        import io
+        encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
+        last_err: Exception | None = None
+        for skip in (2, 0, 1):
+            for enc in encodings:
+                try:
+                    g = pd.read_csv(io.BytesIO(blob), encoding=enc, sep="\t", skiprows=skip)
                     if g.shape[1] >= 5:
                         return g
                 except Exception as exc:  # noqa: BLE001
@@ -1427,14 +1457,18 @@ with tab_google:
                 return None
         return series.map(conv)
 
-    if not _google_path.exists():
+    if _uploaded_bytes is None and not _google_path.exists():
         st.warning(
-            "`Biocyte Google Ads Performance.csv` not found in the dashboard folder. "
-            "Drop the file in and refresh."
+            "No Google Ads file. Upload one in the sidebar (or place "
+            "`Biocyte Google Ads Performance.csv` next to `dashboard.py`)."
         )
     else:
         try:
-            g_raw = _load_google_ads(str(_google_path))
+            if _uploaded_bytes is not None:
+                g_raw = _load_google_ads_bytes(_uploaded_bytes)
+                st.caption(f"Source: uploaded file `{_uploaded_name}`.")
+            else:
+                g_raw = _load_google_ads(str(_google_path))
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not read the Google Ads CSV: {exc}")
             g_raw = pd.DataFrame()
