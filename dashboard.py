@@ -695,7 +695,7 @@ with tab_over:
     k5.metric("Purchases", fmt_int(total_purchases))
 
     k6, k7, k8, k9, k10 = st.columns(5)
-    k6.metric("Avg CTR", fmt_pct(avg_ctr))
+    k6.metric("Prospects", fmt_int(total_leads))
     k7.metric("Avg CPL (cost per prospect)", fmt_money(avg_cpl) if avg_cpl else "—")
     k8.metric("Avg cost per purchase", fmt_money(avg_cost_per_purchase) if avg_cost_per_purchase else "—")
     k9.metric("Avg Frequency", f"{avg_freq:.2f}" if avg_freq else "—")
