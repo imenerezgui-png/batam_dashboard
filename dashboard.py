@@ -134,11 +134,65 @@ def sb_ensure_bucket(public: bool = False, max_mb: int | None = None) -> None:
 
 
 # Remote paths for the two latest uploads
-SB_PATH_META   = "meta/latest.xlsx"
-SB_PATH_GOOGLE = "google/latest.csv"
+SB_PATH_META   = "meta/latest.xlsx"     # merged master (auto-rebuilt)
+SB_PATH_GOOGLE = "google/latest.csv"    # merged master (auto-rebuilt)
+SB_DIR_META    = "meta/raw"             # originals live here
+SB_DIR_GOOGLE  = "google/raw"           # originals live here
+
+
+def sb_list(folder: str) -> list[dict]:
+    """List objects in a folder. Returns [{name, metadata, ...}, ...]."""
+    if not SB_ENABLED:
+        return []
+    try:
+        r = requests.post(
+            f"{SB_URL}/storage/v1/object/list/{SB_BUCKET}",
+            headers=_sb_headers({"Content-Type": "application/json"}),
+            json={"prefix": folder, "limit": 200, "offset": 0,
+                  "sortBy": {"column": "created_at", "order": "desc"}},
+            timeout=30,
+        )
+        if not r.ok:
+            return []
+        return [item for item in r.json() if item.get("name")]
+    except Exception:
+        return []
+
+
+def sb_delete(remote_path: str) -> bool:
+    if not SB_ENABLED:
+        return False
+    try:
+        r = requests.delete(
+            f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(remote_path)}",
+            headers=_sb_headers(), timeout=30,
+        )
+        return r.ok
+    except Exception:
+        return False
+
 
 if SB_ENABLED:
     sb_ensure_bucket(public=False)
+    # One-time migration: if a master exists but no originals are tracked,
+    # seed meta/raw or google/raw with the existing master so it's deletable.
+    if not sb_list(SB_DIR_META):
+        _existing = sb_download(SB_PATH_META)
+        if _existing is not None:
+            try:
+                sb_upload(
+                    f"{SB_DIR_META}/legacy_master.xlsx", _existing,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception:
+                pass
+    if not sb_list(SB_DIR_GOOGLE):
+        _existing_g = sb_download(SB_PATH_GOOGLE)
+        if _existing_g is not None:
+            try:
+                sb_upload(f"{SB_DIR_GOOGLE}/legacy_master.csv", _existing_g, "text/csv")
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -489,94 +543,111 @@ def _file_hash(blob: bytes) -> str:
     return hashlib.md5(blob).hexdigest()
 
 
-def _stack_meta_upload(new_bytes: bytes) -> tuple[int, int, int]:
-    """Merge a new Meta export into the Supabase-stored master and re-upload.
+def _safe_filename(name: str) -> str:
+    """Sanitise a filename for Supabase storage (keep extension, strip path)."""
+    base = Path(name).name
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
+    return base or "upload"
 
-    Returns (rows_before, rows_added, rows_after).
-    """
-    new_df = pd.read_excel(io.BytesIO(new_bytes))
 
-    existing_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
-    if existing_bytes is not None:
+def _read_google(b: bytes) -> pd.DataFrame:
+    encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
+    last_err: Exception | None = None
+    for skip in (2, 0, 1):
+        for enc in encodings:
+            try:
+                g = pd.read_csv(io.BytesIO(b), encoding=enc, sep="\t", skiprows=skip)
+                if g.shape[1] >= 5:
+                    return g
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+    if last_err:
+        raise last_err
+    return pd.DataFrame()
+
+
+def _rebuild_meta_master() -> int:
+    """Concat every Meta original under meta/raw/* into the master xlsx. Returns row count."""
+    frames: list[pd.DataFrame] = []
+    for item in sb_list(SB_DIR_META):
+        b = sb_download(f"{SB_DIR_META}/{item['name']}")
+        if b is None:
+            continue
         try:
-            existing_df = pd.read_excel(io.BytesIO(existing_bytes))
+            frames.append(pd.read_excel(io.BytesIO(b)))
         except Exception:
-            existing_df = pd.DataFrame()
-    else:
-        existing_df = pd.DataFrame()
-
-    rows_before = len(existing_df)
-    if existing_df.empty:
-        merged = new_df
-    else:
-        # Align columns; keep union
-        merged = pd.concat([existing_df, new_df], ignore_index=True, sort=False)
-    merged = merged.drop_duplicates().reset_index(drop=True)
-    rows_after = len(merged)
-    rows_added = rows_after - rows_before
-
-    # Re-upload merged master
+            pass
+    if not frames:
+        # Nothing left → clear the master
+        sb_delete(SB_PATH_META)
+        return 0
+    merged = pd.concat(frames, ignore_index=True, sort=False).drop_duplicates().reset_index(drop=True)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         merged.to_excel(writer, index=False, sheet_name="Worksheet")
     sb_upload(
-        SB_PATH_META,
-        buf.getvalue(),
+        SB_PATH_META, buf.getvalue(),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    return rows_before, rows_added, rows_after
+    return len(merged)
 
 
-def _stack_google_upload(new_bytes: bytes) -> tuple[int, int, int]:
-    """Merge a new Google Ads export into the Supabase-stored master."""
-    # Read new with same robust loader used in the Google Ads tab
-    encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
-    def _read(b: bytes) -> pd.DataFrame:
-        last_err: Exception | None = None
-        for skip in (2, 0, 1):
-            for enc in encodings:
-                try:
-                    g = pd.read_csv(io.BytesIO(b), encoding=enc, sep="\t", skiprows=skip)
-                    if g.shape[1] >= 5:
-                        return g
-                except Exception as exc:  # noqa: BLE001
-                    last_err = exc
-        if last_err:
-            raise last_err
-        return pd.DataFrame()
-
-    new_df = _read(new_bytes)
-    # Drop trailing "Total : ..." summary rows so they don't duplicate later
-    if "État de la campagne" in new_df.columns:
-        new_df = new_df[~new_df["État de la campagne"].fillna("").str.startswith("Total")]
-
-    existing_bytes = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
-    if existing_bytes is not None:
+def _rebuild_google_master() -> int:
+    """Concat every Google original under google/raw/* into the master csv. Returns row count."""
+    frames: list[pd.DataFrame] = []
+    for item in sb_list(SB_DIR_GOOGLE):
+        b = sb_download(f"{SB_DIR_GOOGLE}/{item['name']}")
+        if b is None:
+            continue
         try:
-            existing_df = _read(existing_bytes)
-            if "État de la campagne" in existing_df.columns:
-                existing_df = existing_df[~existing_df["État de la campagne"].fillna("").str.startswith("Total")]
+            g = _read_google(b)
+            if "État de la campagne" in g.columns:
+                g = g[~g["État de la campagne"].fillna("").str.startswith("Total")]
+            frames.append(g)
         except Exception:
-            existing_df = pd.DataFrame()
-    else:
-        existing_df = pd.DataFrame()
-
-    rows_before = len(existing_df)
-    merged = (
-        new_df if existing_df.empty
-        else pd.concat([existing_df, new_df], ignore_index=True, sort=False)
-    )
-    merged = merged.drop_duplicates().reset_index(drop=True)
-    rows_after = len(merged)
-    rows_added = rows_after - rows_before
-
-    # Re-export as UTF-16 / tab-separated to stay compatible with the Google Ads tab loader
+            pass
+    if not frames:
+        sb_delete(SB_PATH_GOOGLE)
+        return 0
+    merged = pd.concat(frames, ignore_index=True, sort=False).drop_duplicates().reset_index(drop=True)
     buf = io.BytesIO()
-    # csv -> bytes via utf-16
     csv_text = merged.to_csv(sep="\t", index=False)
     buf.write(csv_text.encode("utf-16"))
     sb_upload(SB_PATH_GOOGLE, buf.getvalue(), "text/csv; charset=utf-16")
-    return rows_before, rows_added, rows_after
+    return len(merged)
+
+
+def _stack_meta_upload(filename: str, new_bytes: bytes) -> tuple[int, int]:
+    """Save original under meta/raw/ then rebuild master. Returns (rows_before, rows_after)."""
+    rows_before = 0
+    prev = sb_download(SB_PATH_META)
+    if prev is not None:
+        try:
+            rows_before = len(pd.read_excel(io.BytesIO(prev)))
+        except Exception:
+            rows_before = 0
+    safe = _safe_filename(filename)
+    sb_upload(
+        f"{SB_DIR_META}/{safe}", new_bytes,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    rows_after = _rebuild_meta_master()
+    return rows_before, rows_after
+
+
+def _stack_google_upload(filename: str, new_bytes: bytes) -> tuple[int, int]:
+    """Save original under google/raw/ then rebuild master."""
+    rows_before = 0
+    prev = sb_download(SB_PATH_GOOGLE)
+    if prev is not None:
+        try:
+            rows_before = len(_read_google(prev))
+        except Exception:
+            rows_before = 0
+    safe = _safe_filename(filename)
+    sb_upload(f"{SB_DIR_GOOGLE}/{safe}", new_bytes, "text/csv")
+    rows_after = _rebuild_google_master()
+    return rows_before, rows_after
 
 
 st.sidebar.markdown("**📘 Meta Ads**")
@@ -587,14 +658,31 @@ if uploaded is not None and SB_ENABLED:
     _h = _file_hash(uploaded.getvalue())
     if st.session_state.get("meta_last_hash") != _h:
         try:
-            rb, ra, rt = _stack_meta_upload(uploaded.getvalue())
+            rb, rt = _stack_meta_upload(uploaded.name, uploaded.getvalue())
             st.session_state["meta_last_hash"] = _h
-            st.sidebar.success(
-                f"Meta merged — +{ra} new rows (was {rb}, now {rt})."
-                if ra else f"Meta uploaded — no new rows (already in store, total {rt})."
-            )
+            st.sidebar.success(f"Meta merged — was {rb} rows, now {rt}.")
         except Exception as exc:  # noqa: BLE001
             st.sidebar.error(f"Meta merge failed: {exc}")
+
+# ── Delete a stored Meta file ─────────────────────────────────────────────
+with st.sidebar.expander("🗑️ Delete a Meta file", expanded=False):
+    meta_files = sb_list(SB_DIR_META) if SB_ENABLED else []
+    if not meta_files:
+        st.caption("No stored Meta files yet.")
+    else:
+        opts = [f["name"] for f in meta_files]
+        pick = st.selectbox("Stored Meta files", opts, key="meta_delete_pick")
+        if st.button("Delete selected file", key="meta_delete_btn", use_container_width=True):
+            if sb_delete(f"{SB_DIR_META}/{pick}"):
+                try:
+                    rt = _rebuild_meta_master()
+                    st.sidebar.success(f"Deleted `{pick}`. Master now has {rt} rows.")
+                    st.session_state.pop("meta_last_hash", None)
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.sidebar.error(f"Rebuild failed: {exc}")
+            else:
+                st.sidebar.error("Delete failed.")
 
 st.sidebar.markdown("**🔍 Google Ads**")
 uploaded_google = st.sidebar.file_uploader(
@@ -605,13 +693,9 @@ if uploaded_google is not None:
         _hg = _file_hash(uploaded_google.getvalue())
         if st.session_state.get("google_last_hash") != _hg:
             try:
-                rb, ra, rt = _stack_google_upload(uploaded_google.getvalue())
+                rb, rt = _stack_google_upload(uploaded_google.name, uploaded_google.getvalue())
                 st.session_state["google_last_hash"] = _hg
-                st.sidebar.success(
-                    f"Google merged — +{ra} new rows (was {rb}, now {rt})."
-                    if ra else f"Google uploaded — no new rows (total {rt})."
-                )
-                # Refresh in-session cache for the Google Ads tab
+                st.sidebar.success(f"Google merged — was {rb} rows, now {rt}.")
                 merged_bytes = sb_download(SB_PATH_GOOGLE)
                 if merged_bytes is not None:
                     st.session_state["google_ads_upload_bytes"] = merged_bytes
@@ -622,33 +706,27 @@ if uploaded_google is not None:
         st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
         st.session_state["google_ads_upload_name"]  = uploaded_google.name
 
-# Optional: reset stored data
-with st.sidebar.expander("⚠️ Reset stored uploads", expanded=False):
-    rc1, rc2 = st.columns(2)
-    if rc1.button("Clear Meta", use_container_width=True) and SB_ENABLED:
-        try:
-            requests.delete(
-                f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(SB_PATH_META)}",
-                headers=_sb_headers(), timeout=30,
-            )
-            st.session_state.pop("meta_last_hash", None)
-            st.sidebar.success("Meta store cleared.")
-            st.rerun()
-        except Exception as exc:  # noqa: BLE001
-            st.sidebar.error(f"Clear failed: {exc}")
-    if rc2.button("Clear Google", use_container_width=True) and SB_ENABLED:
-        try:
-            requests.delete(
-                f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(SB_PATH_GOOGLE)}",
-                headers=_sb_headers(), timeout=30,
-            )
-            st.session_state.pop("google_last_hash", None)
-            st.session_state.pop("google_ads_upload_bytes", None)
-            st.session_state.pop("google_ads_upload_name", None)
-            st.sidebar.success("Google store cleared.")
-            st.rerun()
-        except Exception as exc:  # noqa: BLE001
-            st.sidebar.error(f"Clear failed: {exc}")
+# ── Delete a stored Google file ───────────────────────────────────────────
+with st.sidebar.expander("🗑️ Delete a Google Ads file", expanded=False):
+    g_files = sb_list(SB_DIR_GOOGLE) if SB_ENABLED else []
+    if not g_files:
+        st.caption("No stored Google Ads files yet.")
+    else:
+        opts = [f["name"] for f in g_files]
+        pick = st.selectbox("Stored Google files", opts, key="google_delete_pick")
+        if st.button("Delete selected file", key="google_delete_btn", use_container_width=True):
+            if sb_delete(f"{SB_DIR_GOOGLE}/{pick}"):
+                try:
+                    rt = _rebuild_google_master()
+                    st.sidebar.success(f"Deleted `{pick}`. Master now has {rt} rows.")
+                    st.session_state.pop("google_last_hash", None)
+                    st.session_state.pop("google_ads_upload_bytes", None)
+                    st.session_state.pop("google_ads_upload_name", None)
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.sidebar.error(f"Rebuild failed: {exc}")
+            else:
+                st.sidebar.error("Delete failed.")
 
 # ── Resolve Meta data source: merged Supabase store → upload (cold) → local file
 sb_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
