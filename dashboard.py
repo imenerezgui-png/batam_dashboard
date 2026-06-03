@@ -667,19 +667,21 @@ with tab_over:
         if COL_OBJECTIVE in fdf.columns else []
     )
     with k4:
-        _sel_obj_result = st.selectbox(
-            "Total results by",
-            options=["All"] + _obj_labels,
-            key="overview_result_obj",
-            label_visibility="visible",
-        )
-        if _sel_obj_result == "All" or not _obj_labels:
-            _result_count = total_results
-        else:
-            _result_count = col_sum(
-                fdf[fdf[COL_OBJECTIVE] == _sel_obj_result], COL_RESULT
+        with st.container(border=True):
+            st.caption("Total results")
+            _sel_obj_result = st.selectbox(
+                "Filter by",
+                options=["All"] + _obj_labels,
+                key="overview_result_obj",
+                label_visibility="collapsed",
             )
-        st.metric("Total results", fmt_int(_result_count))
+            if _sel_obj_result == "All" or not _obj_labels:
+                _result_count = total_results
+            else:
+                _result_count = col_sum(
+                    fdf[fdf[COL_OBJECTIVE] == _sel_obj_result], COL_RESULT
+                )
+            st.markdown(f"<p style='font-size:2rem; font-weight:700; margin:4px 0 0 0;'>{fmt_int(_result_count)}</p>", unsafe_allow_html=True)
     k5.metric("Purchases", fmt_int(total_purchases))
 
     k6, k7, k8, k9, k10 = st.columns(5)
