@@ -483,52 +483,191 @@ def load_uploaded(file) -> pd.DataFrame:
 st.sidebar.title("⚙️ Controls")
 
 if SB_ENABLED:
-    st.sidebar.caption("🟢 Supabase connected — uploads persist.")
+    st.sidebar.caption("🟢 Supabase connected — uploads persist & stack.")
 else:
     st.sidebar.caption("🔴 Supabase not configured — uploads won't persist.")
+
+
+def _file_hash(blob: bytes) -> str:
+    import hashlib
+    return hashlib.md5(blob).hexdigest()
+
+
+def _stack_meta_upload(new_bytes: bytes) -> tuple[int, int, int]:
+    """Merge a new Meta export into the Supabase-stored master and re-upload.
+
+    Returns (rows_before, rows_added, rows_after).
+    """
+    new_df = pd.read_excel(io.BytesIO(new_bytes))
+
+    existing_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
+    if existing_bytes is not None:
+        try:
+            existing_df = pd.read_excel(io.BytesIO(existing_bytes))
+        except Exception:
+            existing_df = pd.DataFrame()
+    else:
+        existing_df = pd.DataFrame()
+
+    rows_before = len(existing_df)
+    if existing_df.empty:
+        merged = new_df
+    else:
+        # Align columns; keep union
+        merged = pd.concat([existing_df, new_df], ignore_index=True, sort=False)
+    merged = merged.drop_duplicates().reset_index(drop=True)
+    rows_after = len(merged)
+    rows_added = rows_after - rows_before
+
+    # Re-upload merged master
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        merged.to_excel(writer, index=False, sheet_name="Worksheet")
+    sb_upload(
+        SB_PATH_META,
+        buf.getvalue(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    return rows_before, rows_added, rows_after
+
+
+def _stack_google_upload(new_bytes: bytes) -> tuple[int, int, int]:
+    """Merge a new Google Ads export into the Supabase-stored master."""
+    # Read new with same robust loader used in the Google Ads tab
+    encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
+    def _read(b: bytes) -> pd.DataFrame:
+        last_err: Exception | None = None
+        for skip in (2, 0, 1):
+            for enc in encodings:
+                try:
+                    g = pd.read_csv(io.BytesIO(b), encoding=enc, sep="\t", skiprows=skip)
+                    if g.shape[1] >= 5:
+                        return g
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+        if last_err:
+            raise last_err
+        return pd.DataFrame()
+
+    new_df = _read(new_bytes)
+    # Drop trailing "Total : ..." summary rows so they don't duplicate later
+    if "État de la campagne" in new_df.columns:
+        new_df = new_df[~new_df["État de la campagne"].fillna("").str.startswith("Total")]
+
+    existing_bytes = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
+    if existing_bytes is not None:
+        try:
+            existing_df = _read(existing_bytes)
+            if "État de la campagne" in existing_df.columns:
+                existing_df = existing_df[~existing_df["État de la campagne"].fillna("").str.startswith("Total")]
+        except Exception:
+            existing_df = pd.DataFrame()
+    else:
+        existing_df = pd.DataFrame()
+
+    rows_before = len(existing_df)
+    merged = (
+        new_df if existing_df.empty
+        else pd.concat([existing_df, new_df], ignore_index=True, sort=False)
+    )
+    merged = merged.drop_duplicates().reset_index(drop=True)
+    rows_after = len(merged)
+    rows_added = rows_after - rows_before
+
+    # Re-export as UTF-16 / tab-separated to stay compatible with the Google Ads tab loader
+    buf = io.BytesIO()
+    # csv -> bytes via utf-16
+    csv_text = merged.to_csv(sep="\t", index=False)
+    buf.write(csv_text.encode("utf-16"))
+    sb_upload(SB_PATH_GOOGLE, buf.getvalue(), "text/csv; charset=utf-16")
+    return rows_before, rows_added, rows_after
+
 
 st.sidebar.markdown("**📘 Meta Ads**")
 uploaded = st.sidebar.file_uploader(
     "Upload Meta Ads export (.xlsx)", type=["xlsx"], key="meta_upload"
 )
 if uploaded is not None and SB_ENABLED:
-    try:
-        sb_upload(SB_PATH_META, uploaded.getvalue(),
-                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.sidebar.success("Meta Ads file saved to Supabase.")
-    except Exception as exc:  # noqa: BLE001
-        st.sidebar.error(f"Meta upload failed: {exc}")
+    _h = _file_hash(uploaded.getvalue())
+    if st.session_state.get("meta_last_hash") != _h:
+        try:
+            rb, ra, rt = _stack_meta_upload(uploaded.getvalue())
+            st.session_state["meta_last_hash"] = _h
+            st.sidebar.success(
+                f"Meta merged — +{ra} new rows (was {rb}, now {rt})."
+                if ra else f"Meta uploaded — no new rows (already in store, total {rt})."
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.sidebar.error(f"Meta merge failed: {exc}")
 
 st.sidebar.markdown("**🔍 Google Ads**")
 uploaded_google = st.sidebar.file_uploader(
     "Upload Google Ads export (.csv)", type=["csv"], key="google_upload"
 )
 if uploaded_google is not None:
-    # Keep raw bytes in session for the Google Ads tab
-    st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
-    st.session_state["google_ads_upload_name"]  = uploaded_google.name
     if SB_ENABLED:
-        try:
-            sb_upload(SB_PATH_GOOGLE, uploaded_google.getvalue(), "text/csv")
-            st.sidebar.success("Google Ads file saved to Supabase.")
-        except Exception as exc:  # noqa: BLE001
-            st.sidebar.error(f"Google upload failed: {exc}")
-
-# ── Resolve Meta data source: upload → Supabase → local file ─────────────
-if uploaded is not None:
-    df = load_uploaded(uploaded)
-else:
-    sb_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
-    if sb_bytes is not None:
-        df = _prepare(pd.read_excel(io.BytesIO(sb_bytes)))
-    elif DATA_FILE.exists():
-        df = load_data(DATA_FILE)
+        _hg = _file_hash(uploaded_google.getvalue())
+        if st.session_state.get("google_last_hash") != _hg:
+            try:
+                rb, ra, rt = _stack_google_upload(uploaded_google.getvalue())
+                st.session_state["google_last_hash"] = _hg
+                st.sidebar.success(
+                    f"Google merged — +{ra} new rows (was {rb}, now {rt})."
+                    if ra else f"Google uploaded — no new rows (total {rt})."
+                )
+                # Refresh in-session cache for the Google Ads tab
+                merged_bytes = sb_download(SB_PATH_GOOGLE)
+                if merged_bytes is not None:
+                    st.session_state["google_ads_upload_bytes"] = merged_bytes
+                    st.session_state["google_ads_upload_name"]  = "(merged store)"
+            except Exception as exc:  # noqa: BLE001
+                st.sidebar.error(f"Google merge failed: {exc}")
     else:
-        st.error(
-            f"No Meta Ads data found. Upload a `.xlsx` export in the sidebar "
-            f"or place `{DATA_FILE.name}` next to `dashboard.py`."
-        )
-        st.stop()
+        st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
+        st.session_state["google_ads_upload_name"]  = uploaded_google.name
+
+# Optional: reset stored data
+with st.sidebar.expander("⚠️ Reset stored uploads", expanded=False):
+    rc1, rc2 = st.columns(2)
+    if rc1.button("Clear Meta", use_container_width=True) and SB_ENABLED:
+        try:
+            requests.delete(
+                f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(SB_PATH_META)}",
+                headers=_sb_headers(), timeout=30,
+            )
+            st.session_state.pop("meta_last_hash", None)
+            st.sidebar.success("Meta store cleared.")
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.sidebar.error(f"Clear failed: {exc}")
+    if rc2.button("Clear Google", use_container_width=True) and SB_ENABLED:
+        try:
+            requests.delete(
+                f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(SB_PATH_GOOGLE)}",
+                headers=_sb_headers(), timeout=30,
+            )
+            st.session_state.pop("google_last_hash", None)
+            st.session_state.pop("google_ads_upload_bytes", None)
+            st.session_state.pop("google_ads_upload_name", None)
+            st.sidebar.success("Google store cleared.")
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.sidebar.error(f"Clear failed: {exc}")
+
+# ── Resolve Meta data source: merged Supabase store → upload (cold) → local file
+sb_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
+if sb_bytes is not None:
+    df = _prepare(pd.read_excel(io.BytesIO(sb_bytes)))
+elif uploaded is not None:
+    df = load_uploaded(uploaded)
+elif DATA_FILE.exists():
+    df = load_data(DATA_FILE)
+else:
+    st.error(
+        f"No Meta Ads data found. Upload a `.xlsx` export in the sidebar "
+        f"or place `{DATA_FILE.name}` next to `dashboard.py`."
+    )
+    st.stop()
 
 st.sidebar.markdown("### Filters")
 
