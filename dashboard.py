@@ -112,25 +112,21 @@ def sb_download(remote_path: str) -> bytes | None:
         return None
 
 
-def sb_ensure_bucket(public: bool = False, max_mb: int = 100) -> None:
-    """Best-effort: create the bucket if missing, then raise its size limit."""
+def sb_ensure_bucket(public: bool = False, max_mb: int | None = None) -> None:
+    """Best-effort: create the bucket if missing. Optionally set a file-size limit
+    (some Supabase plans reject limits above the project default, so we don't set
+    one by default)."""
     if not SB_ENABLED:
         return
     try:
-        # Create if missing
+        body: dict = {"id": SB_BUCKET, "name": SB_BUCKET, "public": public}
+        if max_mb:
+            body["file_size_limit"] = max_mb * 1024 * 1024
+        # Create if missing (200 if created, 409 if it already exists)
         requests.post(
             f"{SB_URL}/storage/v1/bucket",
             headers=_sb_headers({"Content-Type": "application/json"}),
-            json={"id": SB_BUCKET, "name": SB_BUCKET,
-                  "public": public,
-                  "file_size_limit": max_mb * 1024 * 1024},
-            timeout=15,
-        )
-        # Update (in case it already existed)
-        requests.put(
-            f"{SB_URL}/storage/v1/bucket/{SB_BUCKET}",
-            headers=_sb_headers({"Content-Type": "application/json"}),
-            json={"public": public, "file_size_limit": max_mb * 1024 * 1024},
+            json=body,
             timeout=15,
         )
     except Exception:
@@ -142,7 +138,7 @@ SB_PATH_META   = "meta/latest.xlsx"
 SB_PATH_GOOGLE = "google/latest.csv"
 
 if SB_ENABLED:
-    sb_ensure_bucket(public=False, max_mb=100)
+    sb_ensure_bucket(public=False)
 
 
 # ---------------------------------------------------------------------------
