@@ -1548,8 +1548,18 @@ with tab_targets:
         c1, c2 = st.columns([1, 3])
         with c1:
             pick = st.selectbox("Metric", chart_metrics, key="adset_metric")
-            top_n = st.slider("Show top N ad sets", 3, max(3, len(adset_df)),
-                              min(10, len(adset_df)), key="adset_topn")
+            n_adsets = len(adset_df)
+            if n_adsets <= 3:
+                top_n = n_adsets
+                st.caption(f"Showing all {n_adsets} ad set{'s' if n_adsets != 1 else ''}.")
+            else:
+                top_n = st.slider(
+                    "Show top N ad sets",
+                    min_value=3,
+                    max_value=n_adsets,
+                    value=min(10, n_adsets),
+                    key="adset_topn",
+                )
         with c2:
             plot_df = adset_df.sort_values(pick, ascending=False).head(top_n)
             fig = px.bar(
