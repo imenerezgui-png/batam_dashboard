@@ -975,6 +975,36 @@ with tab2:
     fig.update_layout(xaxis_tickangle=-30, height=CHART_HEIGHT)
     st.plotly_chart(fig, use_container_width=True)
 
+    # Cost-per-action funnel chart
+    _funnel_metrics = {
+        "CPC":                   (COL_SPEND, COL_LINK_CLICKS),
+        "Cost per landing view": (COL_SPEND, COL_LANDING_VIEWS),
+        "Cost per view content": (COL_SPEND, COL_CONTENT_VIEWS),
+        "Cost per add to cart":  (COL_SPEND, COL_ADD_CART),
+        "Cost per checkout":     (COL_SPEND, COL_CHECKOUT),
+        "Cost per purchase":     (COL_SPEND, COL_PURCHASES),
+    }
+    cpa_rows = []
+    for label, (spend_col, vol_col) in _funnel_metrics.items():
+        if vol_col in fdf.columns:
+            for camp, grp in fdf.groupby(COL_CAMPAIGN):
+                vol = col_sum(grp, vol_col)
+                spend = col_sum(grp, spend_col)
+                if vol and vol > 0:
+                    cpa_rows.append({"Campaign": camp, "Metric": label, "Cost (€)": round(spend / vol, 2)})
+    if cpa_rows:
+        cpa_df = pd.DataFrame(cpa_rows)
+        fig = px.bar(
+            cpa_df, x="Campaign", y="Cost (€)", color="Metric",
+            barmode="group",
+            title="Cost per action — funnel breakdown by campaign (€)",
+            text_auto=".2f",
+        )
+        fig.update_layout(xaxis_tickangle=-30, height=CHART_HEIGHT)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Not enough funnel data to compute cost-per-action metrics.")
+
     fig = px.scatter(
         fdf, x=COL_CPC_ALL, y=COL_CTR, size=COL_IMPRESSIONS,
         color=COL_OBJECTIVE if COL_OBJECTIVE in fdf.columns else None,
