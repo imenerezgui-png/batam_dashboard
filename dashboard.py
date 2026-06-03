@@ -506,7 +506,7 @@ if _logo_path.exists():
         <div style="display:flex; align-items:center; gap:22px; margin: 6px 0 14px 0;">
             <img src="data:image/webp;base64,{_img_b64(str(_logo_path))}"
                  style="height:78px; width:78px; object-fit:cover;
-                        border-radius:18px; background:#000; padding:4px;
+                        border-radius:18px; background:#E9D4F2; padding:4px;
                         box-shadow:
                             0 0 14px rgba(255,255,255,0.85),
                             0 0 32px rgba(180,200,255,0.55),
