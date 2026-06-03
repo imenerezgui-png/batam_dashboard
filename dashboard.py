@@ -1005,16 +1005,6 @@ with tab2:
     else:
         st.info("Not enough funnel data to compute cost-per-action metrics.")
 
-    fig = px.scatter(
-        fdf, x=COL_CPC_ALL, y=COL_CTR, size=COL_IMPRESSIONS,
-        color=COL_OBJECTIVE if COL_OBJECTIVE in fdf.columns else None,
-        hover_name=COL_AD if COL_AD in fdf.columns else COL_CAMPAIGN,
-        hover_data=[COL_CAMPAIGN, COL_ADSET] if COL_ADSET in fdf.columns else [COL_CAMPAIGN],
-        title="CTR vs CPC (bubble = Impressions)",
-    )
-    fig.update_layout(height=CHART_HEIGHT)
-    st.plotly_chart(fig, use_container_width=True)
-
     # Treemap spend Campaign → Ad set → Ad
     tree_path = [c for c in [COL_CAMPAIGN, COL_ADSET, COL_AD] if c in fdf.columns]
     if len(tree_path) >= 2:
