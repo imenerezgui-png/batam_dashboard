@@ -515,7 +515,7 @@ if _logo_path.exists():
                         animation: ykoneGlow 3.2s ease-in-out infinite;" />
             <div>
                 <h1 style="margin:0; padding:0; font-size:2.1rem;">
-                    Biocyte Meta &amp; Google Ads Dashboard
+                    Meta &amp; Google Ads Performance Dashboard
                 </h1>
             </div>
         </div>
@@ -541,7 +541,7 @@ if _logo_path.exists():
         unsafe_allow_html=True,
     )
 else:
-    st.title("Biocyte — Meta Ads Performance Dashboard")
+    st.title("Meta & Google Ads Performance Dashboard")
 
 # Reporting period
 period_txt = ""
