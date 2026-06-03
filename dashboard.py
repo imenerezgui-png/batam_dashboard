@@ -644,10 +644,10 @@ def col_mean(df, c):
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
-tab_over, tab1, tab2, tab3, tab_targets, tab4, tab5 = st.tabs(
+tab_over, tab1, tab2, tab3, tab_targets, tab4, tab_google, tab5 = st.tabs(
     ["🌐 Overview", "📈 Reach & Impressions", "💰 Cost & Efficiency",
      "❤️ Engagement", "🧭 Core Targets", "🎯 Funnel & Conversions",
-     "🗂️ Raw Data"]
+     "🔍 Google Ads", "🗂️ Raw Data"]
 )
 
 # ---------------------------------------------------------------------------
@@ -1378,6 +1378,215 @@ with tab4:
         ],
         icon="🎯",
     )
+
+# ---------------------------------------------------------------------------
+# Tab 5 — Raw Data
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tab — Google Ads (separate CSV export)
+# ---------------------------------------------------------------------------
+with tab_google:
+    st.markdown("### 🔍 Google Ads — campaign performance")
+    st.caption("Source: `Biocyte Google Ads Performance.csv` (Google Ads export, UTF-16 / tab-separated).")
+
+    _google_path = Path(__file__).parent / "Biocyte Google Ads Performance.csv"
+
+    @st.cache_data(show_spinner=False)
+    def _load_google_ads(path_str: str) -> pd.DataFrame:
+        # Google Ads exports are UTF-16, tab-separated, with 2 header rows above the column names.
+        encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
+        last_err: Exception | None = None
+        for skip in (2, 0, 1):
+            for enc in encodings:
+                try:
+                    g = pd.read_csv(path_str, encoding=enc, sep="\t", skiprows=skip)
+                    if g.shape[1] >= 5:
+                        return g
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+        if last_err:
+            raise last_err
+        return pd.DataFrame()
+
+    def _to_num(series: pd.Series) -> pd.Series:
+        """Convert European-style numbers ('1 178', '23,55', '1,61%', '--') to floats."""
+        def conv(v):
+            if pd.isna(v):
+                return None
+            s = str(v).strip()
+            if s in ("--", "", "nan", "NaN"):
+                return None
+            # Strip currency / percent / labels like "Page vue : 1,00"
+            if ":" in s:
+                s = s.split(":")[-1].strip()
+            s = s.replace("%", "").replace("€", "").replace("\xa0", "").replace(" ", "")
+            s = s.replace(",", ".")
+            try:
+                return float(s)
+            except ValueError:
+                return None
+        return series.map(conv)
+
+    if not _google_path.exists():
+        st.warning(
+            "`Biocyte Google Ads Performance.csv` not found in the dashboard folder. "
+            "Drop the file in and refresh."
+        )
+    else:
+        try:
+            g_raw = _load_google_ads(str(_google_path))
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not read the Google Ads CSV: {exc}")
+            g_raw = pd.DataFrame()
+
+        if g_raw.empty:
+            st.info("Google Ads file is empty.")
+        else:
+            # Keep only real campaign rows (drop the trailing 'Total : Campagnes' summary lines)
+            G_CAMP = "Campagne"
+            if "État de la campagne" in g_raw.columns:
+                g = g_raw[~g_raw["État de la campagne"].fillna("").str.startswith("Total")].copy()
+            else:
+                g = g_raw.copy()
+            g = g[g[G_CAMP].notna() & (g[G_CAMP].astype(str).str.strip() != "")]
+
+            # Numeric conversion
+            num_cols = [
+                "Budget", "Coût", "Impr.", "Clics", "Interactions",
+                "Résultats", "Page vue", "Ajout au panier", "Paiement initié",
+                "Achetez", "Valeur des résultats", "Conversions", "Coût/conv.",
+                "Conversions d'achat", "CPC moy.", "Coût moy.", "CTR",
+            ]
+            for c in num_cols:
+                if c in g.columns:
+                    g[c] = _to_num(g[c])
+
+            # Derived: extract campaign goal + budget from the campaign name (same pattern as Meta)
+            if G_CAMP in g.columns:
+                g["Goal"] = g[G_CAMP].apply(_extract_goal)
+                g["Budget (€)"] = g[G_CAMP].apply(_extract_budget)
+                # Fall back to the "Budget" column if no budget is embedded in the name
+                if "Budget" in g.columns:
+                    g["Budget (€)"] = g["Budget (€)"].fillna(g["Budget"])
+
+            # ── KPI row ─────────────────────────────────────────────────────
+            total_cost   = g["Coût"].sum()         if "Coût" in g.columns else 0
+            total_imp_g  = g["Impr."].sum()        if "Impr." in g.columns else 0
+            total_clk_g  = g["Clics"].sum()        if "Clics" in g.columns else 0
+            total_conv   = g["Conversions"].sum()  if "Conversions" in g.columns else 0
+            total_purch  = g["Conversions d'achat"].sum() if "Conversions d'achat" in g.columns else 0
+            avg_cpc_g    = g["CPC moy."].mean()    if "CPC moy." in g.columns else None
+            avg_ctr_g    = (total_clk_g / total_imp_g * 100) if total_imp_g else None
+            cost_per_conv = (total_cost / total_conv) if total_conv else None
+            total_budget_g = g["Budget (€)"].sum() if "Budget (€)" in g.columns else 0
+            remaining_g   = total_budget_g - total_cost if total_budget_g else None
+
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Total cost",        fmt_money(total_cost))
+            k2.metric("Impressions",       fmt_int(total_imp_g))
+            k3.metric("Clicks",            fmt_int(total_clk_g))
+            k4.metric("Conversions",       fmt_int(total_conv))
+            k5.metric("Purchase conv.",    fmt_int(total_purch))
+
+            k6, k7, k8, k9, k10 = st.columns(5)
+            k6.metric("Avg CTR",           f"{avg_ctr_g:.2f}%" if avg_ctr_g is not None else "—")
+            k7.metric("Avg CPC",           fmt_money(avg_cpc_g) if avg_cpc_g is not None else "—")
+            k8.metric("Cost / conv.",      fmt_money(cost_per_conv) if cost_per_conv is not None else "—")
+            k9.metric("Total budget",      fmt_money(total_budget_g) if total_budget_g else "—")
+            k10.metric("💰 Budget remaining", fmt_money(remaining_g) if remaining_g is not None else "—")
+
+            st.divider()
+
+            # ── Cost vs Conversions / Clicks bar chart per campaign ─────────
+            if "Coût" in g.columns:
+                chart_metrics = [c for c in
+                                 ["Coût", "Impr.", "Clics", "Conversions",
+                                  "Page vue", "Ajout au panier",
+                                  "Paiement initié", "Achetez"]
+                                 if c in g.columns]
+                c1, c2 = st.columns([1, 3])
+                with c1:
+                    pick = st.selectbox("Metric", chart_metrics, key="google_metric")
+                with c2:
+                    plot_df = g[[G_CAMP, pick]].dropna()
+                    if not plot_df.empty:
+                        fig = px.bar(
+                            plot_df.sort_values(pick, ascending=False),
+                            x=G_CAMP, y=pick,
+                            color=pick, color_continuous_scale="Blues",
+                            text_auto=".2f",
+                            title=f"{pick} by Google Ads campaign",
+                        )
+                        fig.update_layout(xaxis_tickangle=-30, height=420, coloraxis_showscale=False)
+                        st.plotly_chart(fig, use_container_width=True)
+
+            # ── Funnel for the (single) campaign ────────────────────────────
+            funnel_map_g = [
+                ("Impressions",     "Impr."),
+                ("Clicks",          "Clics"),
+                ("Page views",      "Page vue"),
+                ("Add to cart",     "Ajout au panier"),
+                ("Checkout",        "Paiement initié"),
+                ("Purchases",       "Achetez"),
+            ]
+            funnel_rows = []
+            for label, col in funnel_map_g:
+                if col in g.columns:
+                    val = g[col].sum()
+                    if pd.notna(val):
+                        funnel_rows.append({"Stage": label, "Count": val})
+            if funnel_rows:
+                f_df = pd.DataFrame(funnel_rows)
+                fc1, fc2 = st.columns(2)
+                with fc1:
+                    fig = px.funnel(f_df, x="Count", y="Stage",
+                                    title="Conversion funnel")
+                    fig.update_layout(height=420)
+                    st.plotly_chart(fig, use_container_width=True)
+                with fc2:
+                    # Per-campaign goal breakdown
+                    if "Goal" in g.columns and g["Goal"].notna().any():
+                        goal_df = (
+                            g.dropna(subset=["Goal"])
+                            .groupby("Goal", as_index=False)
+                            .agg(Cost=("Coût", "sum"),
+                                 Clicks=("Clics", "sum"),
+                                 Conversions=("Conversions", "sum"))
+                        )
+                        fig = px.bar(
+                            goal_df.melt(id_vars="Goal", value_vars=["Cost", "Clicks", "Conversions"]),
+                            x="Goal", y="value", color="variable", barmode="group",
+                            title="Performance by campaign goal",
+                        )
+                        fig.update_layout(height=420)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("No goal information found in campaign names.")
+
+            st.divider()
+
+            # ── Campaign-level table ────────────────────────────────────────
+            st.markdown("#### Campaign table")
+            table_cols = [c for c in [
+                G_CAMP, "État", "Type de campagne", "Goal", "Budget (€)",
+                "Coût", "Impr.", "Clics", "CTR", "CPC moy.",
+                "Conversions", "Coût/conv.", "Page vue", "Ajout au panier",
+                "Paiement initié", "Achetez",
+            ] if c in g.columns]
+            show_g = g[table_cols].copy()
+            for c in ["Budget (€)", "Coût", "CPC moy.", "Coût/conv."]:
+                if c in show_g.columns:
+                    show_g[c] = show_g[c].map(lambda v: fmt_money(v) if pd.notna(v) else "—")
+            for c in ["Impr.", "Clics", "Conversions", "Page vue",
+                      "Ajout au panier", "Paiement initié", "Achetez"]:
+                if c in show_g.columns:
+                    show_g[c] = show_g[c].map(lambda v: fmt_int(v) if pd.notna(v) else "—")
+            if "CTR" in show_g.columns:
+                show_g["CTR"] = show_g["CTR"].map(lambda v: f"{v:.2f}%" if pd.notna(v) else "—")
+            st.dataframe(show_g, use_container_width=True, hide_index=True)
+
+            with st.expander("Raw Google Ads export", expanded=False):
+                st.dataframe(g_raw, use_container_width=True, height=320)
 
 # ---------------------------------------------------------------------------
 # Tab 5 — Raw Data
