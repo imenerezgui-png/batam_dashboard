@@ -4,12 +4,15 @@ Interactive Streamlit dashboard for the Biocyte Meta Ads export.
 """
 from pathlib import Path
 import base64
+import io
 import re
+from urllib.parse import quote
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
+import requests
 import streamlit as st
 
 # ---------------------------------------------------------------------------
@@ -49,6 +52,98 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ---------------------------------------------------------------------------
+# Supabase Storage (persistent backend for uploaded exports)
+# ---------------------------------------------------------------------------
+def _sb_cfg() -> tuple[str | None, str | None, str]:
+    try:
+        cfg = st.secrets["supabase"]
+        return cfg["url"].rstrip("/"), cfg["service_key"], cfg.get("bucket", "biocyte-uploads")
+    except Exception:
+        return None, None, "biocyte-uploads"
+
+
+SB_URL, SB_KEY, SB_BUCKET = _sb_cfg()
+SB_ENABLED = bool(SB_URL and SB_KEY)
+
+
+def _sb_headers(extra: dict | None = None) -> dict:
+    h = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
+    if extra:
+        h.update(extra)
+    return h
+
+
+def sb_upload(remote_path: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+    if not SB_ENABLED:
+        raise RuntimeError("Supabase is not configured.")
+    url = f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(remote_path)}"
+    r = requests.post(
+        url,
+        headers=_sb_headers({
+            "Content-Type": content_type,
+            "x-upsert": "true",
+            "cache-control": "3600",
+        }),
+        data=data,
+        timeout=300,
+    )
+    if not r.ok:
+        msg = ""
+        try:
+            j = r.json()
+            msg = j.get("message") or j.get("error") or ""
+        except Exception:
+            msg = (r.text or "")[:300]
+        raise RuntimeError(f"Supabase upload failed ({r.status_code}): {msg}")
+
+
+def sb_download(remote_path: str) -> bytes | None:
+    if not SB_ENABLED:
+        return None
+    try:
+        url = f"{SB_URL}/storage/v1/object/{SB_BUCKET}/{quote(remote_path)}"
+        r = requests.get(url, headers=_sb_headers(), timeout=120)
+        if r.status_code == 404 or not r.ok:
+            return None
+        return r.content
+    except Exception:
+        return None
+
+
+def sb_ensure_bucket(public: bool = False, max_mb: int = 100) -> None:
+    """Best-effort: create the bucket if missing, then raise its size limit."""
+    if not SB_ENABLED:
+        return
+    try:
+        # Create if missing
+        requests.post(
+            f"{SB_URL}/storage/v1/bucket",
+            headers=_sb_headers({"Content-Type": "application/json"}),
+            json={"id": SB_BUCKET, "name": SB_BUCKET,
+                  "public": public,
+                  "file_size_limit": max_mb * 1024 * 1024},
+            timeout=15,
+        )
+        # Update (in case it already existed)
+        requests.put(
+            f"{SB_URL}/storage/v1/bucket/{SB_BUCKET}",
+            headers=_sb_headers({"Content-Type": "application/json"}),
+            json={"public": public, "file_size_limit": max_mb * 1024 * 1024},
+            timeout=15,
+        )
+    except Exception:
+        pass
+
+
+# Remote paths for the two latest uploads
+SB_PATH_META   = "meta/latest.xlsx"
+SB_PATH_GOOGLE = "google/latest.csv"
+
+if SB_ENABLED:
+    sb_ensure_bucket(public=False, max_mb=100)
+
 
 # ---------------------------------------------------------------------------
 # Custom CSS — modern dark theme inspired by analytics dashboards
@@ -387,30 +482,53 @@ def load_uploaded(file) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 st.sidebar.title("⚙️ Controls")
 
+if SB_ENABLED:
+    st.sidebar.caption("🟢 Supabase connected — uploads persist.")
+else:
+    st.sidebar.caption("🔴 Supabase not configured — uploads won't persist.")
+
 st.sidebar.markdown("**📘 Meta Ads**")
 uploaded = st.sidebar.file_uploader(
     "Upload Meta Ads export (.xlsx)", type=["xlsx"], key="meta_upload"
 )
+if uploaded is not None and SB_ENABLED:
+    try:
+        sb_upload(SB_PATH_META, uploaded.getvalue(),
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.sidebar.success("Meta Ads file saved to Supabase.")
+    except Exception as exc:  # noqa: BLE001
+        st.sidebar.error(f"Meta upload failed: {exc}")
 
 st.sidebar.markdown("**🔍 Google Ads**")
 uploaded_google = st.sidebar.file_uploader(
     "Upload Google Ads export (.csv)", type=["csv"], key="google_upload"
 )
-# Persist the uploaded Google Ads file so the Google Ads tab can pick it up
 if uploaded_google is not None:
+    # Keep raw bytes in session for the Google Ads tab
     st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
     st.session_state["google_ads_upload_name"]  = uploaded_google.name
+    if SB_ENABLED:
+        try:
+            sb_upload(SB_PATH_GOOGLE, uploaded_google.getvalue(), "text/csv")
+            st.sidebar.success("Google Ads file saved to Supabase.")
+        except Exception as exc:  # noqa: BLE001
+            st.sidebar.error(f"Google upload failed: {exc}")
 
+# ── Resolve Meta data source: upload → Supabase → local file ─────────────
 if uploaded is not None:
     df = load_uploaded(uploaded)
-elif DATA_FILE.exists():
-    df = load_data(DATA_FILE)
 else:
-    st.error(
-        f"No data file found. Place `{DATA_FILE.name}` next to "
-        f"`dashboard.py` or upload an export in the sidebar."
-    )
-    st.stop()
+    sb_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
+    if sb_bytes is not None:
+        df = _prepare(pd.read_excel(io.BytesIO(sb_bytes)))
+    elif DATA_FILE.exists():
+        df = load_data(DATA_FILE)
+    else:
+        st.error(
+            f"No Meta Ads data found. Upload a `.xlsx` export in the sidebar "
+            f"or place `{DATA_FILE.name}` next to `dashboard.py`."
+        )
+        st.stop()
 
 st.sidebar.markdown("### Filters")
 
@@ -1458,6 +1576,15 @@ with tab_google:
         return series.map(conv)
 
     if _uploaded_bytes is None and not _google_path.exists():
+        # Last resort: try Supabase
+        sb_bytes_g = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
+        if sb_bytes_g is not None:
+            _uploaded_bytes = sb_bytes_g
+            _uploaded_name  = "(from Supabase)"
+            st.session_state["google_ads_upload_bytes"] = sb_bytes_g
+            st.session_state["google_ads_upload_name"]  = _uploaded_name
+
+    if _uploaded_bytes is None and not _google_path.exists():
         st.warning(
             "No Google Ads file. Upload one in the sidebar (or place "
             "`Biocyte Google Ads Performance.csv` next to `dashboard.py`)."
@@ -1468,7 +1595,14 @@ with tab_google:
                 g_raw = _load_google_ads_bytes(_uploaded_bytes)
                 st.caption(f"Source: uploaded file `{_uploaded_name}`.")
             else:
-                g_raw = _load_google_ads(str(_google_path))
+                # Try Supabase first, then fall back to bundled file
+                sb_bytes_g = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
+                if sb_bytes_g is not None:
+                    g_raw = _load_google_ads_bytes(sb_bytes_g)
+                    st.caption("Source: latest upload stored in Supabase.")
+                else:
+                    g_raw = _load_google_ads(str(_google_path))
+                    st.caption(f"Source: bundled file `{_google_path.name}`.")
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not read the Google Ads CSV: {exc}")
             g_raw = pd.DataFrame()
