@@ -1739,7 +1739,6 @@ with tab4:
 # ---------------------------------------------------------------------------
 with tab_google:
     st.markdown("### 🔍 Google Ads — campaign performance")
-    st.caption("Source: `Biocyte Google Ads Performance.csv` (Google Ads export, UTF-16 / tab-separated).")
 
     _google_path = Path(__file__).parent / "Biocyte Google Ads Performance.csv"
     _uploaded_bytes = st.session_state.get("google_ads_upload_bytes")
