@@ -537,6 +537,34 @@ if SB_ENABLED:
 else:
     st.sidebar.caption("🔴 Supabase not configured — uploads won't persist.")
 
+# ── Admin login (gates uploads & deletes) ─────────────────────────────────
+try:
+    _ADMIN_USER = st.secrets.get("admin_user", "omd_admin2024")
+    _ADMIN_PASS = st.secrets.get("admin_pass", "loginomd2024@@")
+except Exception:
+    _ADMIN_USER, _ADMIN_PASS = "omd_admin2024", "loginomd2024@@"
+
+if "is_admin" not in st.session_state:
+    st.session_state["is_admin"] = False
+
+with st.sidebar.expander("🔐 Admin login", expanded=not st.session_state["is_admin"]):
+    if st.session_state["is_admin"]:
+        st.success("Logged in as admin.")
+        if st.button("Log out", key="admin_logout", use_container_width=True):
+            st.session_state["is_admin"] = False
+            st.rerun()
+    else:
+        _u = st.text_input("Login", key="admin_user_input")
+        _p = st.text_input("Password", type="password", key="admin_pass_input")
+        if st.button("Log in", key="admin_login_btn", use_container_width=True):
+            if _u == _ADMIN_USER and _p == _ADMIN_PASS:
+                st.session_state["is_admin"] = True
+                st.rerun()
+            else:
+                st.error("Invalid credentials.")
+
+IS_ADMIN = st.session_state.get("is_admin", False)
+
 
 def _file_hash(blob: bytes) -> str:
     import hashlib
@@ -651,82 +679,89 @@ def _stack_google_upload(filename: str, new_bytes: bytes) -> tuple[int, int]:
 
 
 st.sidebar.markdown("**📘 Meta Ads**")
-uploaded = st.sidebar.file_uploader(
-    "Upload Meta Ads export (.xlsx)", type=["xlsx"], key="meta_upload"
-)
-if uploaded is not None and SB_ENABLED:
-    _h = _file_hash(uploaded.getvalue())
-    if st.session_state.get("meta_last_hash") != _h:
-        try:
-            rb, rt = _stack_meta_upload(uploaded.name, uploaded.getvalue())
-            st.session_state["meta_last_hash"] = _h
-            st.sidebar.success(f"Meta merged — was {rb} rows, now {rt}.")
-        except Exception as exc:  # noqa: BLE001
-            st.sidebar.error(f"Meta merge failed: {exc}")
+if not IS_ADMIN:
+    st.sidebar.caption("🔒 Log in as admin to upload or delete files.")
+    uploaded = None
+else:
+    uploaded = st.sidebar.file_uploader(
+        "Upload Meta Ads export (.xlsx)", type=["xlsx"], key="meta_upload"
+    )
+    if uploaded is not None and SB_ENABLED:
+        _h = _file_hash(uploaded.getvalue())
+        if st.session_state.get("meta_last_hash") != _h:
+            try:
+                rb, rt = _stack_meta_upload(uploaded.name, uploaded.getvalue())
+                st.session_state["meta_last_hash"] = _h
+                st.sidebar.success(f"Meta merged — was {rb} rows, now {rt}.")
+            except Exception as exc:  # noqa: BLE001
+                st.sidebar.error(f"Meta merge failed: {exc}")
 
-# ── Delete a stored Meta file ─────────────────────────────────────────────
-with st.sidebar.expander("🗑️ Delete a Meta file", expanded=False):
-    meta_files = sb_list(SB_DIR_META) if SB_ENABLED else []
-    if not meta_files:
-        st.caption("No stored Meta files yet.")
-    else:
-        opts = [f["name"] for f in meta_files]
-        pick = st.selectbox("Stored Meta files", opts, key="meta_delete_pick")
-        if st.button("Delete selected file", key="meta_delete_btn", use_container_width=True):
-            if sb_delete(f"{SB_DIR_META}/{pick}"):
-                try:
-                    rt = _rebuild_meta_master()
-                    st.sidebar.success(f"Deleted `{pick}`. Master now has {rt} rows.")
-                    st.session_state.pop("meta_last_hash", None)
-                    st.rerun()
-                except Exception as exc:  # noqa: BLE001
-                    st.sidebar.error(f"Rebuild failed: {exc}")
-            else:
-                st.sidebar.error("Delete failed.")
+    # ── Delete a stored Meta file ─────────────────────────────────────────
+    with st.sidebar.expander("🗑️ Delete a Meta file", expanded=False):
+        meta_files = sb_list(SB_DIR_META) if SB_ENABLED else []
+        if not meta_files:
+            st.caption("No stored Meta files yet.")
+        else:
+            opts = [f["name"] for f in meta_files]
+            pick = st.selectbox("Stored Meta files", opts, key="meta_delete_pick")
+            if st.button("Delete selected file", key="meta_delete_btn", use_container_width=True):
+                if sb_delete(f"{SB_DIR_META}/{pick}"):
+                    try:
+                        rt = _rebuild_meta_master()
+                        st.sidebar.success(f"Deleted `{pick}`. Master now has {rt} rows.")
+                        st.session_state.pop("meta_last_hash", None)
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.sidebar.error(f"Rebuild failed: {exc}")
+                else:
+                    st.sidebar.error("Delete failed.")
 
 st.sidebar.markdown("**🔍 Google Ads**")
-uploaded_google = st.sidebar.file_uploader(
-    "Upload Google Ads export (.csv)", type=["csv"], key="google_upload"
-)
-if uploaded_google is not None:
-    if SB_ENABLED:
-        _hg = _file_hash(uploaded_google.getvalue())
-        if st.session_state.get("google_last_hash") != _hg:
-            try:
-                rb, rt = _stack_google_upload(uploaded_google.name, uploaded_google.getvalue())
-                st.session_state["google_last_hash"] = _hg
-                st.sidebar.success(f"Google merged — was {rb} rows, now {rt}.")
-                merged_bytes = sb_download(SB_PATH_GOOGLE)
-                if merged_bytes is not None:
-                    st.session_state["google_ads_upload_bytes"] = merged_bytes
-                    st.session_state["google_ads_upload_name"]  = "(merged store)"
-            except Exception as exc:  # noqa: BLE001
-                st.sidebar.error(f"Google merge failed: {exc}")
-    else:
-        st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
-        st.session_state["google_ads_upload_name"]  = uploaded_google.name
-
-# ── Delete a stored Google file ───────────────────────────────────────────
-with st.sidebar.expander("🗑️ Delete a Google Ads file", expanded=False):
-    g_files = sb_list(SB_DIR_GOOGLE) if SB_ENABLED else []
-    if not g_files:
-        st.caption("No stored Google Ads files yet.")
-    else:
-        opts = [f["name"] for f in g_files]
-        pick = st.selectbox("Stored Google files", opts, key="google_delete_pick")
-        if st.button("Delete selected file", key="google_delete_btn", use_container_width=True):
-            if sb_delete(f"{SB_DIR_GOOGLE}/{pick}"):
+if not IS_ADMIN:
+    uploaded_google = None
+else:
+    uploaded_google = st.sidebar.file_uploader(
+        "Upload Google Ads export (.csv)", type=["csv"], key="google_upload"
+    )
+    if uploaded_google is not None:
+        if SB_ENABLED:
+            _hg = _file_hash(uploaded_google.getvalue())
+            if st.session_state.get("google_last_hash") != _hg:
                 try:
-                    rt = _rebuild_google_master()
-                    st.sidebar.success(f"Deleted `{pick}`. Master now has {rt} rows.")
-                    st.session_state.pop("google_last_hash", None)
-                    st.session_state.pop("google_ads_upload_bytes", None)
-                    st.session_state.pop("google_ads_upload_name", None)
-                    st.rerun()
+                    rb, rt = _stack_google_upload(uploaded_google.name, uploaded_google.getvalue())
+                    st.session_state["google_last_hash"] = _hg
+                    st.sidebar.success(f"Google merged — was {rb} rows, now {rt}.")
+                    merged_bytes = sb_download(SB_PATH_GOOGLE)
+                    if merged_bytes is not None:
+                        st.session_state["google_ads_upload_bytes"] = merged_bytes
+                        st.session_state["google_ads_upload_name"]  = "(merged store)"
                 except Exception as exc:  # noqa: BLE001
-                    st.sidebar.error(f"Rebuild failed: {exc}")
-            else:
-                st.sidebar.error("Delete failed.")
+                    st.sidebar.error(f"Google merge failed: {exc}")
+        else:
+            st.session_state["google_ads_upload_bytes"] = uploaded_google.getvalue()
+            st.session_state["google_ads_upload_name"]  = uploaded_google.name
+
+    # ── Delete a stored Google file ───────────────────────────────────────
+    with st.sidebar.expander("🗑️ Delete a Google Ads file", expanded=False):
+        g_files = sb_list(SB_DIR_GOOGLE) if SB_ENABLED else []
+        if not g_files:
+            st.caption("No stored Google Ads files yet.")
+        else:
+            opts = [f["name"] for f in g_files]
+            pick = st.selectbox("Stored Google files", opts, key="google_delete_pick")
+            if st.button("Delete selected file", key="google_delete_btn", use_container_width=True):
+                if sb_delete(f"{SB_DIR_GOOGLE}/{pick}"):
+                    try:
+                        rt = _rebuild_google_master()
+                        st.sidebar.success(f"Deleted `{pick}`. Master now has {rt} rows.")
+                        st.session_state.pop("google_last_hash", None)
+                        st.session_state.pop("google_ads_upload_bytes", None)
+                        st.session_state.pop("google_ads_upload_name", None)
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.sidebar.error(f"Rebuild failed: {exc}")
+                else:
+                    st.sidebar.error("Delete failed.")
 
 # ── Resolve Meta data source: merged Supabase store → upload (cold) → local file
 sb_bytes = sb_download(SB_PATH_META) if SB_ENABLED else None
