@@ -1654,13 +1654,13 @@ with tab_targets:
 # ---------------------------------------------------------------------------
 with tab4:
     funnel_map = {
-        "Content views":   COL_CONTENT_VIEWS,
-        "Landing views":   COL_LANDING_VIEWS,
-        "Link clicks":     COL_LINK_CLICKS,
-        "Add to cart":     COL_ADD_CART,
-        "Checkout":        COL_CHECKOUT,
-        "Payment info":    COL_PAY_INFO,
-        "Purchases":       COL_PURCHASES,
+        "Clicks":            COL_CLICKS,
+        "Click to website":  COL_LINK_CLICKS,
+        "View landing page": COL_LANDING_VIEWS,
+        "View content":      COL_CONTENT_VIEWS,
+        "Add to cart":       COL_ADD_CART,
+        "Paiement initié":   COL_CHECKOUT,
+        "Purchase":          COL_PURCHASES,
     }
     funnel_vals = {
         label: col_sum(fdf, col)
