@@ -1342,14 +1342,6 @@ with tab2:
     fig.update_layout(xaxis_tickangle=-30, height=CHART_HEIGHT, coloraxis_showscale=False)
     st.plotly_chart(fig, use_container_width=True)
 
-    fig = px.bar(
-        cost_df.melt(id_vars=COL_CAMPAIGN, value_vars=[COL_CTR, COL_CPC_ALL, COL_CPM]),
-        x=COL_CAMPAIGN, y="value", color="variable", barmode="group",
-        title="Avg CTR / CPC / CPM by campaign",
-    )
-    fig.update_layout(xaxis_tickangle=-30, height=CHART_HEIGHT)
-    st.plotly_chart(fig, use_container_width=True)
-
     # Cost-per-action funnel chart
     _funnel_metrics = {
         "CPC":                   (COL_SPEND, COL_LINK_CLICKS),
