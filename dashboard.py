@@ -1960,31 +1960,10 @@ with tab_google:
                         funnel_rows.append({"Stage": label, "Count": val})
             if funnel_rows:
                 f_df = pd.DataFrame(funnel_rows)
-                fc1, fc2 = st.columns(2)
-                with fc1:
-                    fig = px.funnel(f_df, x="Count", y="Stage",
-                                    title="Conversion funnel")
-                    fig.update_layout(height=420)
-                    st.plotly_chart(fig, use_container_width=True)
-                with fc2:
-                    # Per-campaign goal breakdown
-                    if "Goal" in g.columns and g["Goal"].notna().any():
-                        goal_df = (
-                            g.dropna(subset=["Goal"])
-                            .groupby("Goal", as_index=False)
-                            .agg(Cost=("Coût", "sum"),
-                                 Clicks=("Clics", "sum"),
-                                 Conversions=("Conversions", "sum"))
-                        )
-                        fig = px.bar(
-                            goal_df.melt(id_vars="Goal", value_vars=["Cost", "Clicks", "Conversions"]),
-                            x="Goal", y="value", color="variable", barmode="group",
-                            title="Performance by campaign goal",
-                        )
-                        fig.update_layout(height=420)
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("No goal information found in campaign names.")
+                fig = px.funnel(f_df, x="Count", y="Stage",
+                                title="Conversion funnel")
+                fig.update_layout(height=420)
+                st.plotly_chart(fig, use_container_width=True)
 
             st.divider()
 
