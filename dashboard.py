@@ -863,6 +863,16 @@ if objectives:
 if goals:
     mask &= df[COL_GOAL].isin(sel_goals) | df[COL_GOAL].isna()
 
+# ── Google Ads campaign filter (sidebar) ─────────────────────────────────
+# Loaded lazily once Google data is available; stored in session state.
+_goog_all_camps = st.session_state.get("_goog_all_camps", [])
+if _goog_all_camps:
+    sel_google_camps = dropdown_filter(
+        "Google campaign", _goog_all_camps, key="flt_google_camp"
+    )
+else:
+    sel_google_camps = []
+
 # ---------------------------------------------------------------------------
 # Cross-filter state (set by clicking on charts)
 # ---------------------------------------------------------------------------
@@ -1870,6 +1880,23 @@ with tab_google:
             else:
                 g = g_raw.copy()
             g = g[g[G_CAMP].notna() & (g[G_CAMP].astype(str).str.strip() != "")]
+
+            # ── Populate sidebar Google campaign filter ───────────────────
+            all_g_camps = sorted(g[G_CAMP].dropna().unique().tolist())
+            if st.session_state.get("_goog_all_camps") != all_g_camps:
+                st.session_state["_goog_all_camps"] = all_g_camps
+                # Reset per-option state so new campaigns start as selected
+                for _c in all_g_camps:
+                    st.session_state.pop(f"flt_google_camp__opt__{_c}", None)
+                st.session_state.pop("flt_google_camp__all", None)
+
+            # Apply sidebar filter
+            _active_g_camps = [
+                c for c in all_g_camps
+                if st.session_state.get(f"flt_google_camp__opt__{c}", True)
+            ]
+            if _active_g_camps and len(_active_g_camps) < len(all_g_camps):
+                g = g[g[G_CAMP].isin(_active_g_camps)]
 
             # Numeric conversion
             num_cols = [
