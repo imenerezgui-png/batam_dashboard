@@ -782,6 +782,97 @@ else:
     )
     st.stop()
 
+# ── Resolve Google Ads data source (top-level so sidebar filter always works) ──
+@st.cache_data(show_spinner=False)
+def _load_google_ads(path_str: str) -> pd.DataFrame:
+    encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
+    last_err: Exception | None = None
+    for skip in (2, 0, 1):
+        for enc in encodings:
+            try:
+                g = pd.read_csv(path_str, encoding=enc, sep="\t", skiprows=skip)
+                if g.shape[1] >= 5:
+                    return g
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+    if last_err:
+        raise last_err
+    return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False)
+def _load_google_ads_bytes(blob: bytes) -> pd.DataFrame:
+    encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
+    last_err: Exception | None = None
+    for skip in (2, 0, 1):
+        for enc in encodings:
+            try:
+                g = pd.read_csv(io.BytesIO(blob), encoding=enc, sep="\t", skiprows=skip)
+                if g.shape[1] >= 5:
+                    return g
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+    if last_err:
+        raise last_err
+    return pd.DataFrame()
+
+
+def _to_num(series: pd.Series) -> pd.Series:
+    """Convert European-style numbers ('1 178', '23,55', '1,61%', '--') to floats."""
+    def conv(v):
+        if pd.isna(v):
+            return None
+        s = str(v).strip()
+        if s in ("--", "", "nan", "NaN"):
+            return None
+        if ":" in s:
+            s = s.split(":")[-1].strip()
+        s = s.replace("%", "").replace("€", "").replace("\xa0", "").replace(" ", "")
+        s = s.replace(",", ".")
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    return series.map(conv)
+
+
+_google_path = Path(__file__).parent / "Biocyte Google Ads Performance.csv"
+_uploaded_bytes_g = st.session_state.get("google_ads_upload_bytes")
+_uploaded_name_g  = st.session_state.get("google_ads_upload_name")
+
+# Try Supabase if nothing in session yet
+if _uploaded_bytes_g is None and not _google_path.exists():
+    _sb_bytes_g = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
+    if _sb_bytes_g is not None:
+        _uploaded_bytes_g = _sb_bytes_g
+        _uploaded_name_g  = "(from Supabase)"
+        st.session_state["google_ads_upload_bytes"] = _sb_bytes_g
+        st.session_state["google_ads_upload_name"]  = _uploaded_name_g
+
+_g_raw_global: pd.DataFrame = pd.DataFrame()
+try:
+    if _uploaded_bytes_g is not None:
+        _g_raw_global = _load_google_ads_bytes(_uploaded_bytes_g)
+    elif _google_path.exists():
+        _sb_bytes_g = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
+        if _sb_bytes_g is not None:
+            _g_raw_global = _load_google_ads_bytes(_sb_bytes_g)
+        else:
+            _g_raw_global = _load_google_ads(str(_google_path))
+except Exception:
+    _g_raw_global = pd.DataFrame()
+
+# Build campaign list for sidebar filter
+_G_CAMP = "Campagne"
+if not _g_raw_global.empty and _G_CAMP in _g_raw_global.columns:
+    _g_filtered = _g_raw_global.copy()
+    if "État de la campagne" in _g_filtered.columns:
+        _g_filtered = _g_filtered[~_g_filtered["État de la campagne"].fillna("").str.startswith("Total")]
+    _g_filtered = _g_filtered[_g_filtered[_G_CAMP].notna() & (_g_filtered[_G_CAMP].astype(str).str.strip() != "")]
+    _goog_all_camps_global = sorted(_g_filtered[_G_CAMP].dropna().unique().tolist())
+else:
+    _goog_all_camps_global = []
+
 st.sidebar.markdown("### Filters")
 
 
@@ -864,11 +955,9 @@ if goals:
     mask &= df[COL_GOAL].isin(sel_goals) | df[COL_GOAL].isna()
 
 # ── Google Ads campaign filter (sidebar) ─────────────────────────────────
-# Loaded lazily once Google data is available; stored in session state.
-_goog_all_camps = st.session_state.get("_goog_all_camps", [])
-if _goog_all_camps:
+if _goog_all_camps_global:
     sel_google_camps = dropdown_filter(
-        "Google campaign", _goog_all_camps, key="flt_google_camp"
+        "Google campaign", _goog_all_camps_global, key="flt_google_camp"
     )
 else:
     sel_google_camps = []
@@ -1781,122 +1870,30 @@ with tab4:
 with tab_google:
     st.markdown("### 🔍 Google Ads — campaign performance")
 
-    _google_path = Path(__file__).parent / "Biocyte Google Ads Performance.csv"
-    _uploaded_bytes = st.session_state.get("google_ads_upload_bytes")
-    _uploaded_name  = st.session_state.get("google_ads_upload_name")
-
-    @st.cache_data(show_spinner=False)
-    def _load_google_ads(path_str: str) -> pd.DataFrame:
-        # Google Ads exports are UTF-16, tab-separated, with 2 header rows above the column names.
-        encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
-        last_err: Exception | None = None
-        for skip in (2, 0, 1):
-            for enc in encodings:
-                try:
-                    g = pd.read_csv(path_str, encoding=enc, sep="\t", skiprows=skip)
-                    if g.shape[1] >= 5:
-                        return g
-                except Exception as exc:  # noqa: BLE001
-                    last_err = exc
-        if last_err:
-            raise last_err
-        return pd.DataFrame()
-
-    @st.cache_data(show_spinner=False)
-    def _load_google_ads_bytes(blob: bytes) -> pd.DataFrame:
-        import io
-        encodings = ["utf-16", "utf-16-le", "utf-8-sig", "utf-8"]
-        last_err: Exception | None = None
-        for skip in (2, 0, 1):
-            for enc in encodings:
-                try:
-                    g = pd.read_csv(io.BytesIO(blob), encoding=enc, sep="\t", skiprows=skip)
-                    if g.shape[1] >= 5:
-                        return g
-                except Exception as exc:  # noqa: BLE001
-                    last_err = exc
-        if last_err:
-            raise last_err
-        return pd.DataFrame()
-
-    def _to_num(series: pd.Series) -> pd.Series:
-        """Convert European-style numbers ('1 178', '23,55', '1,61%', '--') to floats."""
-        def conv(v):
-            if pd.isna(v):
-                return None
-            s = str(v).strip()
-            if s in ("--", "", "nan", "NaN"):
-                return None
-            # Strip currency / percent / labels like "Page vue : 1,00"
-            if ":" in s:
-                s = s.split(":")[-1].strip()
-            s = s.replace("%", "").replace("€", "").replace("\xa0", "").replace(" ", "")
-            s = s.replace(",", ".")
-            try:
-                return float(s)
-            except ValueError:
-                return None
-        return series.map(conv)
-
-    if _uploaded_bytes is None and not _google_path.exists():
-        # Last resort: try Supabase
-        sb_bytes_g = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
-        if sb_bytes_g is not None:
-            _uploaded_bytes = sb_bytes_g
-            _uploaded_name  = "(from Supabase)"
-            st.session_state["google_ads_upload_bytes"] = sb_bytes_g
-            st.session_state["google_ads_upload_name"]  = _uploaded_name
-
-    if _uploaded_bytes is None and not _google_path.exists():
+    if _g_raw_global.empty and not _google_path.exists() and _uploaded_bytes_g is None:
         st.warning(
             "No Google Ads file. Upload one in the sidebar (or place "
             "`Biocyte Google Ads Performance.csv` next to `dashboard.py`)."
         )
+    elif _g_raw_global.empty:
+        st.info("Google Ads file is empty.")
     else:
-        try:
-            if _uploaded_bytes is not None:
-                g_raw = _load_google_ads_bytes(_uploaded_bytes)
-                st.caption(f"Source: uploaded file `{_uploaded_name}`.")
-            else:
-                # Try Supabase first, then fall back to bundled file
-                sb_bytes_g = sb_download(SB_PATH_GOOGLE) if SB_ENABLED else None
-                if sb_bytes_g is not None:
-                    g_raw = _load_google_ads_bytes(sb_bytes_g)
-                    st.caption("Source: latest upload stored in Supabase.")
-                else:
-                    g_raw = _load_google_ads(str(_google_path))
-                    st.caption(f"Source: bundled file `{_google_path.name}`.")
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Could not read the Google Ads CSV: {exc}")
-            g_raw = pd.DataFrame()
+        g_raw = _g_raw_global
+        G_CAMP = _G_CAMP
 
-        if g_raw.empty:
-            st.info("Google Ads file is empty.")
+        if G_CAMP not in g_raw.columns:
+            st.error("Column 'Campagne' not found in Google Ads data.")
         else:
-            # Keep only real campaign rows (drop the trailing 'Total : Campagnes' summary lines)
-            G_CAMP = "Campagne"
+            # Keep only real campaign rows
             if "État de la campagne" in g_raw.columns:
                 g = g_raw[~g_raw["État de la campagne"].fillna("").str.startswith("Total")].copy()
             else:
                 g = g_raw.copy()
             g = g[g[G_CAMP].notna() & (g[G_CAMP].astype(str).str.strip() != "")]
 
-            # ── Populate sidebar Google campaign filter ───────────────────
-            all_g_camps = sorted(g[G_CAMP].dropna().unique().tolist())
-            if st.session_state.get("_goog_all_camps") != all_g_camps:
-                st.session_state["_goog_all_camps"] = all_g_camps
-                # Reset per-option state so new campaigns start as selected
-                for _c in all_g_camps:
-                    st.session_state.pop(f"flt_google_camp__opt__{_c}", None)
-                st.session_state.pop("flt_google_camp__all", None)
-
             # Apply sidebar filter
-            _active_g_camps = [
-                c for c in all_g_camps
-                if st.session_state.get(f"flt_google_camp__opt__{c}", True)
-            ]
-            if _active_g_camps and len(_active_g_camps) < len(all_g_camps):
-                g = g[g[G_CAMP].isin(_active_g_camps)]
+            if sel_google_camps and len(sel_google_camps) < len(_goog_all_camps_global):
+                g = g[g[G_CAMP].isin(sel_google_camps)]
 
             # Numeric conversion
             num_cols = [
